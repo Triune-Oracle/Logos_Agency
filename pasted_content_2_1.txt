@@ -1,0 +1,183 @@
+# Codex Shrine Memory Protocol v1.0 - Environment Configuration
+# Copy this file to .env and configure your values
+
+# =============================================================================
+# SERVER CONFIGURATION
+# =============================================================================
+
+# Port for the shrine to listen on (default: 3333)
+PORT=3333
+
+# Environment (development, production, test)
+NODE_ENV=development
+
+# =============================================================================
+# MEMORY MANAGEMENT
+# =============================================================================
+
+# Number of days to retain pulse data before pruning (default: 30)
+RETENTION_DAYS=30
+
+# Maximum number of local snapshots to maintain (default: 50)
+MAX_SNAPSHOTS=50
+
+# Create snapshot before pruning old data (default: true)
+SNAPSHOT_ON_PRUNE=true
+
+# =============================================================================
+# IPFS STORAGE SERVICES
+# =============================================================================
+
+# Preferred IPFS service: 'web3storage' or 'pinata'
+IPFS_SERVICE=web3storage
+
+# Web3.Storage configuration
+# Get your token from: https://web3.storage/tokens/
+WEB3_STORAGE_TOKEN=your_web3_storage_token_here
+
+# Pinata configuration (alternative to Web3.Storage)
+# Get your keys from: https://pinata.cloud/keys
+PINATA_API_KEY=your_pinata_api_key_here
+PINATA_SECRET_KEY=your_pinata_secret_key_here
+
+# Enable automatic IPFS pinning during ritual cycles (default: false)
+AUTO_PIN_IPFS=true
+
+# =============================================================================
+# SWARM ORCHESTRATOR
+# =============================================================================
+
+# Frequency of autonomous swarm pulses in milliseconds (default: 300000 = 5 minutes)
+SWARM_PULSE_FREQUENCY=300000
+
+# Maximum number of concurrent agent executions (default: 10)
+MAX_CONCURRENT_AGENTS=10
+
+# Number of errors before marking an agent as unhealthy (default: 3)
+AGENT_ERROR_THRESHOLD=3
+
+# Enable autonomous agent actions during pulse cycles (default: true)
+ENABLE_AGENT_AUTONOMY=true
+
+# =============================================================================
+# DATABASE CONFIGURATION
+# =============================================================================
+
+# SQLite database file path (relative to project root)
+DB_PATH=./shrine.db
+
+# Archive directory for snapshots (relative to project root)
+ARCHIVE_PATH=./db/archive
+
+# Enable database WAL mode for better concurrent access (default: true)
+DB_WAL_MODE=true
+
+# =============================================================================
+# LOGGING & MONITORING
+# =============================================================================
+
+# Log level: 'debug', 'info', 'warn', 'error'
+LOG_LEVEL=info
+
+# Log file path (relative to project root)
+LOG_FILE=./logs/shrine.log
+
+# Enable structured JSON logging (default: true)
+JSON_LOGGING=true
+
+# Enable performance metrics collection (default: true)
+ENABLE_METRICS=true
+
+# =============================================================================
+# SECURITY & ACCESS CONTROL
+# =============================================================================
+
+# API key for protected endpoints (leave empty to disable auth)
+API_KEY=
+
+# Enable CORS for cross-origin requests (default: true)
+ENABLE_CORS=true
+
+# Allowed origins for CORS (comma-separated, or '*' for all)
+CORS_ORIGINS=*
+
+# Rate limiting: requests per window per IP
+RATE_LIMIT_REQUESTS=100
+RATE_LIMIT_WINDOW=900000
+
+# =============================================================================
+# AGENT CONFIGURATION
+# =============================================================================
+
+# Market Scanner Agent settings
+MARKET_SCAN_INTERVAL=600000
+MARKET_SYMBOLS=BTC,ETH,SOL,ADA
+MARKET_PRICE_THRESHOLD=0.05
+
+# Content Agent settings
+CONTENT_GENERATION_INTERVAL=900000
+CONTENT_MAX_LENGTH=500
+CONTENT_THEMES=market,technology,decentralization,sovereignty
+
+# =============================================================================
+# EXTERNAL INTEGRATIONS
+# =============================================================================
+
+# Webhook URLs for notifications (comma-separated)
+WEBHOOK_URLS=
+
+# External database replication (optional)
+POSTGRES_URL=
+MONGODB_URL=
+
+# Message broker for event publishing (optional)
+RABBITMQ_URL=
+REDIS_URL=
+
+# =============================================================================
+# DEPLOYMENT SPECIFIC
+# =============================================================================
+
+# For Railway deployment
+RAILWAY_STATIC_URL=
+
+# For Vercel deployment
+VERCEL_URL=
+
+# For custom domain
+CUSTOM_DOMAIN=
+
+# =============================================================================
+# ADVANCED FEATURES
+# =============================================================================
+
+# Enable experimental features (default: false)
+ENABLE_EXPERIMENTAL=false
+
+# Snapshot compression (future feature)
+ENABLE_COMPRESSION=false
+
+# Multi-language support (future feature)
+LANGUAGE=en
+
+# Custom agent loading directory
+CUSTOM_AGENTS_PATH=./agents/custom
+
+# Plugin system directory
+PLUGINS_PATH=./plugins
+
+# =============================================================================
+# DEVELOPMENT & TESTING
+# =============================================================================
+
+# Enable debug mode with verbose logging
+DEBUG_MODE=false
+
+# Test database path (used during testing)
+TEST_DB_PATH=./test_shrine.db
+
+# Mock external APIs during testing
+MOCK_EXTERNAL_APIS=false
+
+# Enable hot reload for agent development
+HOT_RELOAD_AGENTS=false
