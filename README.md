@@ -1,5 +1,16 @@
 # AI Service Microservice
 
+[![CI Status](https://github.com/Triune-Oracle/Logos_Agency/actions/workflows/ci.yml/badge.svg)](https://github.com/Triune-Oracle/Logos_Agency/actions/workflows/ci.yml)
+[![Code Coverage](https://img.shields.io/badge/coverage-0%25-red)](https://github.com/Triune-Oracle/Logos_Agency)
+
+## 📚 Documentation & Guides
+
+📖 [Getting Started Guide](docs/GETTING_STARTED.md)
+*   [Architecture](docs/ARCHITECTURE.md)
+*   [Performance](docs/PERFORMANCE.md)
+*   [Roadmap](docs/ROADMAP.md)
+*   [Monetization](docs/MONETIZATION.md)
+
 ## Overview
 This microservice provides advanced conversation analysis leveraging OpenAI APIs. Supports sentiment, archetype, emotion, theme, and communication pattern analysis.
 
