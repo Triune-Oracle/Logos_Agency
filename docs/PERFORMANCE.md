@@ -1,37 +1,50 @@
-# Performance Benchmarking Documentation
+'''# Performance Metrics and Key Success Indicators (KSI)
 
-## Introduction
-This document provides a comprehensive overview of the performance benchmarks conducted for the Logos_Agency project. It includes detailed results, comparison tables, methodological explanations, and instructions for reproducing the benchmarks.
+## 1. Dual-Track Strategy Overview
 
-## Benchmark Results
-| Test Case | Result | Time (ms) | Notes |
-|-----------|--------|-----------|-------|
-| Test 1   | X      | Y         | Notes |
-| Test 2   | A      | B         | Notes |
+The project operates on a dual-track execution plan:
+*   **Track A (Triumvirate Core):** High ML, Vision/Research focus, 6-18 month timeline.
+*   **Track B (CSV-to-SQL Engine):** Low ML, Revenue/Market focus, 0-6 month timeline.
 
-## Comparison Tables
-| Feature     | Version 1 | Version 2 | Improvement |
-|-------------|-----------|-----------|-------------|
-| Feature A   | 100       | 80        | 20%         |
-| Feature B   | 200       | 150       | 25%         |
+The core principle is that **Track B funds Track A**. Performance is measured by the successful execution of both tracks against their respective Key Success Indicators (KSI).
 
-## Methodology
-The benchmarks were conducted under the following conditions:
-- Hardware specifications
-- Software versions
-- Test parameters
+## 2. Key Success Metrics (Week 12 Targets)
 
-Detailed steps include:
-1. Setup the environment
-2. Execute test cases
-3. Collect results
+The following metrics are the primary indicators of performance for the first 90 days:
 
-## Reproducibility Instructions
-To reproduce these benchmarks, follow these steps:
-1. Clone the repository: `git clone <repo_url>`
-2. Navigate to the required directory.
-3. Execute the benchmark script: `./run_benchmarks.sh`
-4. Analyze the results generated in the `results` directory.
+| Track | Metric | Target |
+|:------|:-------|:-------|
+| **Track A** | Testnet Uptime | 99.5% |
+| | AI Recruitment (Agents taking oath) | 2+ |
+| | NFT Revenue | $100k+ |
+| | Research Citations | 20+ |
+| **Track B** | GitHub Stars | 1000+ |
+| | Enterprise Pilots | 3+ |
+| | Monthly Recurring Revenue (MRR) | $5k+ |
+| | AWS Marketplace Users | 50+ |
 
-## Conclusion
-This document will be updated as new benchmarks are performed and new features are added to the project. For any questions or issues, please reach out to the maintainers.
+## 3. Financial Targets and Revenue Projections
+
+Financial performance is critical to the dual-track strategy.
+
+| Metric | Week 12 Target | Status |
+|:-------|:---------------|:-------|
+| **Total Revenue (Combined)** | $85k - $275k | 70% Probability |
+| **Track B Pilot Revenue** | $50k+ | 💰 |
+| **Track B MRR** | $5k+ | 💰 |
+| **Track A NFT Revenue** | $100k+ | 🔥 |
+| **Track B Annual License** | $25k/year | (Base contract) |
+| **Track B Pilot Fee** | $5k | (Waived if >50% time savings) |
+
+## 4. Resource Allocation and Efficiency
+
+The plan is resource-constrained, making efficiency a key performance indicator.
+
+| Category | Allocation | Details |
+|:---------|:-----------|:--------|
+| **Time (Personal)** | Track A: 40% | Vision, research, platform |
+| | Track B: 40% | Sales, marketing, support |
+| | Overhead/Learning: 20% | Admin, skill development |
+| **Budget (Total $10k)** | Track A: $6k | Cloud hosting, API costs, marketing |
+| | Track B: $3k | Advertising, AWS marketplace, tools |
+| | Buffer: $1k | Emergency, opportunities |'''
