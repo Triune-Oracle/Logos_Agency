@@ -33,17 +33,19 @@ func InferColumnType(values []string) string {
 		if allInt {
 			if _, err := strconv.Atoi(v); err != nil {
 				allInt = false
+				// If not an int, check if it's still a float
+				if allFloat {
+					if _, err := strconv.ParseFloat(v, 64); err != nil {
+						allFloat = false
+					}
+				}
 			}
-		}
-
-		// Check float only if not already ruled out and int failed
-		if allFloat && !allInt {
+			// If it's an int, it's also a valid float (no need to check)
+		} else if allFloat {
+			// Int already ruled out, but still checking float
 			if _, err := strconv.ParseFloat(v, 64); err != nil {
 				allFloat = false
 			}
-		} else if allInt {
-			// If it's an int, it's also a valid float
-			allFloat = true
 		}
 
 		// Only check dates if not already ruled out
