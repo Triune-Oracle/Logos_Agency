@@ -34,14 +34,15 @@ func InferColumnType(values []string) string {
 		if allInt {
 			if _, err := strconv.Atoi(v); err != nil {
 				allInt = false
+				// All ints are valid floats, so we still need to check float
 			}
 		}
 
 		// Only check float if we haven't ruled it out
-		// Note: if allInt is true, allFloat must also be true (ints are valid floats)
 		if allFloat {
 			if _, err := strconv.ParseFloat(v, 64); err != nil {
 				allFloat = false
+				allInt = false // If not a valid float, can't be an int either
 			}
 		}
 

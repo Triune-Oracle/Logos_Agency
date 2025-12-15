@@ -100,7 +100,10 @@ class HTTPClient:
                     resp.raise_for_status()
                     return await resp.json()
         # fallback: run sync in executor
-        loop = asyncio.get_event_loop()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.get_event_loop()
         func = functools.partial(HTTPClient.sync_post, url, payload, timeout)
         return await loop.run_in_executor(None, func)
 
@@ -239,7 +242,10 @@ class SupremeHead:
                     await f.write(json.dumps(entry, ensure_ascii=False) + "\n")
             else:
                 # Fallback: run sync I/O in executor to avoid blocking event loop
-                loop = asyncio.get_event_loop()
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, self._record_event, event_type, payload)
                 return
             logger.debug(f"Recorded event async: {event_type}")
@@ -345,7 +351,10 @@ class SupremeHead:
             if hasattr(self.mind_nexus, "analyze_async"):
                 analysis = await self._safe_call_async(self.mind_nexus.analyze_async, raw_data, {"source": source})
             else:
-                loop = asyncio.get_event_loop()
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = asyncio.get_event_loop()
                 analysis = await loop.run_in_executor(None, functools.partial(self.mind_nexus.analyze, raw_data, {"source": source}))
         except Exception:
             logger.exception("Async analysis failed")
@@ -366,7 +375,10 @@ class SupremeHead:
                 if hasattr(self.swarm_engine, "trigger_nft_mint_async"):
                     res = await self._safe_call_async(self.swarm_engine.trigger_nft_mint_async, raw_data, analysis)
                 else:
-                    loop = asyncio.get_event_loop()
+                    try:
+                        loop = asyncio.get_running_loop()
+                    except RuntimeError:
+                        loop = asyncio.get_event_loop()
                     res = await loop.run_in_executor(None, functools.partial(self.swarm_engine.trigger_nft_mint, raw_data, analysis))
                 action = "NFT Mint Triggered"
                 await self._record_event_async("nft_triggered_async", {"score": score, "result": res})
@@ -375,7 +387,10 @@ class SupremeHead:
                 if hasattr(self.memory_core, "store_async"):
                     res = await self._safe_call_async(self.memory_core.store_async, payload)
                 else:
-                    loop = asyncio.get_event_loop()
+                    try:
+                        loop = asyncio.get_running_loop()
+                    except RuntimeError:
+                        loop = asyncio.get_event_loop()
                     res = await loop.run_in_executor(None, functools.partial(self.memory_core.store, payload))
                 action = "Stored in Memory Core"
                 await self._record_event_async("scroll_stored_async", {"score": score, "result": res})
