@@ -18,7 +18,7 @@ func TestHeuristicScanner_InferColumnType(t *testing.T) {
 		{"Malformed Rows",
 			[]string{"7", "???", "9"}, "string"},
 		{"Mixed Types", []string{"1", "hello", "3.14"}, "string"},
-		{"Long Month", []string{"January 1 2020", "February 2 2021"}, "date"},
+		{"Long Month", []string{"Jan 1 2020", "Feb 2 2021"}, "date"},
 	}
 
 	for _, tc := range tests {

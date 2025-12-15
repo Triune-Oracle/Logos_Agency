@@ -25,21 +25,38 @@ func InferColumnType(values []string) string {
 			return "string"
 		}
 
-		if _, err := strconv.Atoi(v); err != nil {
-			allInt = false
+		// Early termination: if all types are ruled out, return immediately
+		if !allInt && !allFloat && !allDate {
+			return "string"
 		}
-		if _, err := strconv.ParseFloat(v, 64); err != nil {
-			allFloat = false
-		}
-		parsedAsDate := false
-		for _, f := range dateFormats {
-			if _, err := time.Parse(f, v); err == nil {
-				parsedAsDate = true
-				break
+
+		// Only check int if we haven't ruled it out
+		if allInt {
+			if _, err := strconv.Atoi(v); err != nil {
+				allInt = false
 			}
 		}
-		if !parsedAsDate {
-			allDate = false
+
+		// Only check float if we haven't ruled it out
+		// Note: if allInt is true, allFloat must also be true (ints are valid floats)
+		if allFloat {
+			if _, err := strconv.ParseFloat(v, 64); err != nil {
+				allFloat = false
+			}
+		}
+
+		// Only check date if we haven't ruled it out
+		if allDate {
+			parsedAsDate := false
+			for _, f := range dateFormats {
+				if _, err := time.Parse(f, v); err == nil {
+					parsedAsDate = true
+					break
+				}
+			}
+			if !parsedAsDate {
+				allDate = false
+			}
 		}
 	}
 
