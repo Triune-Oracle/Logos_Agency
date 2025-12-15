@@ -11,6 +11,7 @@ var dateFormats = []string{
 	"01/02/2006",
 	"02-01-2006",
 	"Jan 2 2006",
+	"January 2 2006",
 	time.RFC3339,
 }
 
@@ -18,29 +19,59 @@ func InferColumnType(values []string) string {
 	allInt := true
 	allFloat := true
 	allDate := true
+	hasNonEmpty := false
 
 	for _, v := range values {
 		v = strings.TrimSpace(v)
 		if v == "" {
-			return "string"
+			continue // Skip empty values instead of early return
 		}
+		hasNonEmpty = true
 
-		if _, err := strconv.Atoi(v); err != nil {
-			allInt = false
-		}
-		if _, err := strconv.ParseFloat(v, 64); err != nil {
-			allFloat = false
-		}
-		parsedAsDate := false
-		for _, f := range dateFormats {
-			if _, err := time.Parse(f, v); err == nil {
-				parsedAsDate = true
-				break
+		// Optimization: int parsing is redundant since ParseFloat covers integers
+		// Only parse as int if we haven't ruled it out yet
+		if allInt {
+			if _, err := strconv.Atoi(v); err != nil {
+				allInt = false
+				// If not an int, check if it's still a float
+				if allFloat {
+					if _, err := strconv.ParseFloat(v, 64); err != nil {
+						allFloat = false
+					}
+				}
+			}
+			// If it's an int, it's also a valid float (no need to check)
+		} else if allFloat {
+			// Int already ruled out, but still checking float
+			if _, err := strconv.ParseFloat(v, 64); err != nil {
+				allFloat = false
 			}
 		}
-		if !parsedAsDate {
-			allDate = false
+
+		// Only check dates if not already ruled out
+		// This is the most expensive check, so do it last
+		if allDate {
+			parsedAsDate := false
+			for _, f := range dateFormats {
+				if _, err := time.Parse(f, v); err == nil {
+					parsedAsDate = true
+					break
+				}
+			}
+			if !parsedAsDate {
+				allDate = false
+			}
 		}
+
+		// Early exit optimization: if all types are ruled out, it's a string
+		if !allInt && !allFloat && !allDate {
+			return "string"
+		}
+	}
+
+	// If all values were empty, treat as string
+	if !hasNonEmpty {
+		return "string"
 	}
 
 	if allInt {
