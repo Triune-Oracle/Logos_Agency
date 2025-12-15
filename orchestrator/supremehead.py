@@ -102,20 +102,20 @@ class HTTPClient:
 class MemoryCoreClient:
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/")
+        # Cache the URL to avoid repeated string operations
+        self._store_url = f"{self.base_url}/store"
 
     def store(self, scroll: Dict[str, Any]) -> Dict[str, Any]:
-        url = f"{self.base_url}/store" if not self.base_url.endswith("/store") else self.base_url
         try:
-            logger.debug(f"MemoryCoreClient.store -> POST {url}")
-            return HTTPClient.sync_post(url, scroll)
+            logger.debug(f"MemoryCoreClient.store -> POST {self._store_url}")
+            return HTTPClient.sync_post(self._store_url, scroll)
         except Exception as e:
             logger.exception("MemoryCore store failed")
             return {"error": str(e)}
 
     async def store_async(self, scroll: Dict[str, Any]) -> Dict[str, Any]:
-        url = f"{self.base_url}/store" if not self.base_url.endswith("/store") else self.base_url
         try:
-            return await HTTPClient.async_post(url, scroll)
+            return await HTTPClient.async_post(self._store_url, scroll)
         except Exception as e:
             logger.exception("MemoryCore async store failed")
             return {"error": str(e)}
@@ -124,13 +124,14 @@ class MemoryCoreClient:
 class MindNexusClient:
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/")
+        # Cache the URL to avoid repeated string operations
+        self._analyze_url = f"{self.base_url}/analyze"
 
     def analyze(self, raw: str, meta: Dict[str, Any] = None) -> Dict[str, Any]:
         payload = {"raw": raw, "meta": meta or {}}
-        url = f"{self.base_url}/analyze" if not self.base_url.endswith("/analyze") else self.base_url
         try:
-            logger.debug(f"MindNexusClient.analyze -> POST {url}")
-            return HTTPClient.sync_post(url, payload)
+            logger.debug(f"MindNexusClient.analyze -> POST {self._analyze_url}")
+            return HTTPClient.sync_post(self._analyze_url, payload)
         except Exception as e:
             logger.exception("MindNexus analyze failed")
             # fallback lightweight analysis
@@ -144,9 +145,8 @@ class MindNexusClient:
 
     async def analyze_async(self, raw: str, meta: Dict[str, Any] = None) -> Dict[str, Any]:
         payload = {"raw": raw, "meta": meta or {}}
-        url = f"{self.base_url}/analyze" if not self.base_url.endswith("/analyze") else self.base_url
         try:
-            return await HTTPClient.async_post(url, payload)
+            return await HTTPClient.async_post(self._analyze_url, payload)
         except Exception as e:
             logger.exception("MindNexus analyze async failed")
             return {
@@ -180,7 +180,8 @@ class SupremeHead:
         "nft_threshold": 85,
         "codex_ledger_path": os.path.join(LOG_DIR, "codex_ledger.log"),
         "retries": 2,
-        "retry_delay_seconds": 1
+        "retry_delay_seconds": 1,
+        "event_buffer_size": 10  # Buffer events before flushing to disk
     }
 
     def __init__(self, config_path: str = "config.json"):
@@ -189,6 +190,9 @@ class SupremeHead:
         self.mind_nexus = MindNexusClient(self.config["mind_nexus_url"])
         self.swarm_engine = SwarmEngine(self.config.get("swarm_config", {}))
         self.ledger_path = self.config.get("codex_ledger_path", "codex_ledger.log")
+        # Add event buffer for batch writing
+        self._event_buffer = []
+        self._buffer_size = self.config.get("event_buffer_size", 10)
         logger.info("Supreme Head Initialized. Awaiting Scroll Ingestion.")
 
     def _load_config(self, path: str) -> Dict[str, Any]:
@@ -205,24 +209,38 @@ class SupremeHead:
             logger.exception("Failed to load config, using defaults.")
             return dict(SupremeHead.DEFAULT_CONFIG)
 
-    # Ledger & event recording
+    # Ledger & event recording with buffering for performance
     def _record_event(self, event_type: str, payload: Dict[str, Any]):
         entry = {
             "event_type": event_type,
             "timestamp": now_iso(),
             "payload": payload
         }
+        self._event_buffer.append(entry)
+        
+        # Flush buffer when it reaches the configured size
+        if len(self._event_buffer) >= self._buffer_size:
+            self._flush_events()
+        logger.debug(f"Buffered event: {event_type}")
+
+    def _flush_events(self):
+        """Flush buffered events to disk in a single write operation."""
+        if not self._event_buffer:
+            return
+        
         try:
             with open(self.ledger_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-            logger.debug(f"Recorded event: {event_type}")
+                for entry in self._event_buffer:
+                    f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            logger.debug(f"Flushed {len(self._event_buffer)} events to ledger")
+            self._event_buffer.clear()
         except Exception:
-            logger.exception("Failed to write to ledger")
+            logger.exception("Failed to flush events to ledger")
 
-    # Safe call wrapper with simple retries
+    # Safe call wrapper with exponential backoff for better retry efficiency
     def _safe_call(self, fn, *args, retries: Optional[int] = None, **kwargs):
         r = retries if retries is not None else self.config.get("retries", 2)
-        delay = self.config.get("retry_delay_seconds", 1)
+        base_delay = self.config.get("retry_delay_seconds", 1)
         last_exc = None
         for attempt in range(1, r + 1):
             try:
@@ -230,7 +248,10 @@ class SupremeHead:
             except Exception as e:
                 last_exc = e
                 logger.warning(f"Attempt {attempt}/{r} failed for {fn.__name__}: {e}")
-                time.sleep(delay)
+                if attempt < r:
+                    # Exponential backoff: delay increases with each retry
+                    delay = base_delay * (2 ** (attempt - 1))
+                    time.sleep(delay)
         logger.error(f"All {r} attempts failed for {fn.__name__}")
         raise last_exc
 
@@ -281,6 +302,9 @@ class SupremeHead:
         except Exception:
             logger.exception("Action stage failed")
             action = "Action Failed"
+
+        # Ensure events are flushed after processing
+        self._flush_events()
 
         return {
             "status": "Processed",
@@ -338,6 +362,9 @@ class SupremeHead:
         except Exception:
             logger.exception("Async action failed")
             action = "Action Failed"
+
+        # Ensure events are flushed after processing
+        self._flush_events()
 
         return {
             "status": "Processed",
