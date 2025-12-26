@@ -69,7 +69,9 @@ def safe_write_json(path: str, obj: Any):
 
 # ---- Integration stubs (pluggable clients) ----
 class HTTPClient:
-    """Simple pluggable HTTP client supporting sync and async calls."""
+    """Simple pluggable HTTP client supporting sync and async calls with connection pooling."""
+    _session: Optional[Any] = None
+    _session_lock = asyncio.Lock()
 
     @staticmethod
     def sync_post(url: str, payload: Dict[str, Any], timeout: int = 10):
@@ -93,10 +95,29 @@ class HTTPClient:
             raise
 
     @staticmethod
+    async def get_session():
+        """Get or create a shared aiohttp session with connection pooling."""
+        if HTTPClient._session is None:
+            async with HTTPClient._session_lock:
+                if HTTPClient._session is None and aiohttp:
+                    # Create session with connection pooling
+                    connector = aiohttp.TCPConnector(limit=100, limit_per_host=30)
+                    HTTPClient._session = aiohttp.ClientSession(connector=connector)
+        return HTTPClient._session
+
+    @staticmethod
+    async def close_session():
+        """Close the shared session."""
+        if HTTPClient._session is not None:
+            await HTTPClient._session.close()
+            HTTPClient._session = None
+
+    @staticmethod
     async def async_post(url: str, payload: Dict[str, Any], timeout: int = 10):
         if aiohttp:
-            async with aiohttp.ClientSession() as sess:
-                async with sess.post(url, json=payload, timeout=timeout) as resp:
+            session = await HTTPClient.get_session()
+            if session:
+                async with session.post(url, json=payload, timeout=timeout) as resp:
                     resp.raise_for_status()
                     return await resp.json()
         # fallback: run sync in executor
@@ -198,6 +219,12 @@ class SupremeHead:
         self.mind_nexus = MindNexusClient(self.config["mind_nexus_url"])
         self.swarm_engine = SwarmEngine(self.config.get("swarm_config", {}))
         self.ledger_path = self.config.get("codex_ledger_path", "codex_ledger.log")
+        
+        # Batch ledger writing
+        self._ledger_buffer: list = []
+        self._ledger_buffer_lock = asyncio.Lock()
+        self._ledger_buffer_size = self.config.get("ledger_buffer_size", 10)
+        
         logger.info("Supreme Head Initialized. Awaiting Scroll Ingestion.")
 
     def _load_config(self, path: str) -> Dict[str, Any]:
@@ -228,29 +255,50 @@ class SupremeHead:
         except Exception:
             logger.exception("Failed to write to ledger")
 
-    # Async ledger recording (non-blocking for async paths)
+    # Async ledger recording with batching
     async def _record_event_async(self, event_type: str, payload: Dict[str, Any]):
         entry = {
             "event_type": event_type,
             "timestamp": now_iso(),
             "payload": payload
         }
+        
+        async with self._ledger_buffer_lock:
+            self._ledger_buffer.append(entry)
+            
+            # Flush when buffer reaches size threshold
+            if len(self._ledger_buffer) >= self._ledger_buffer_size:
+                await self._flush_ledger_buffer()
+    
+    async def _flush_ledger_buffer(self):
+        """Flush buffered ledger entries to disk."""
+        if not self._ledger_buffer:
+            return
+            
         try:
+            batch = '\n'.join(json.dumps(e, ensure_ascii=False) for e in self._ledger_buffer)
+            
             if aiofiles:
                 # Use async file I/O if available
                 async with aiofiles.open(self.ledger_path, "a", encoding="utf-8") as f:
-                    await f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                    await f.write(batch + "\n")
             else:
                 # Fallback: run sync I/O in executor to avoid blocking event loop
                 try:
                     loop = asyncio.get_running_loop()
                 except RuntimeError:
                     loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, self._record_event, event_type, payload)
-                return
-            logger.debug(f"Recorded event async: {event_type}")
+                    
+                def write_batch():
+                    with open(self.ledger_path, "a", encoding="utf-8") as f:
+                        f.write(batch + "\n")
+                        
+                await loop.run_in_executor(None, write_batch)
+                
+            logger.debug(f"Flushed {len(self._ledger_buffer)} ledger entries")
+            self._ledger_buffer.clear()
         except Exception:
-            logger.exception("Failed to write to ledger async")
+            logger.exception("Failed to flush ledger buffer")
 
     # Safe call wrapper with simple retries
     def _safe_call(self, fn, *args, retries: Optional[int] = None, **kwargs):
@@ -405,6 +453,16 @@ class SupremeHead:
             "source": source,
             "analysis": analysis
         }
+    
+    async def cleanup(self):
+        """Cleanup resources and flush pending data."""
+        # Flush any pending ledger entries
+        async with self._ledger_buffer_lock:
+            await self._flush_ledger_buffer()
+        
+        # Close HTTP session
+        await HTTPClient.close_session()
+        logger.info("Supreme Head cleanup complete.")
 
 
 # ---- Quick CLI for manual testing ----
