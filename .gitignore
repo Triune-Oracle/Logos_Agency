@@ -19,6 +19,22 @@ coverage.out
 .env
 
 # IDE
+ Binaries
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.out
+
+# Go workspace file
+go.work
 # Environment variables
 .env
 .env.local
@@ -39,6 +55,20 @@ pnpm-debug.log*
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Logs
+*.log
+
+# Environment
+.env
+.venv
+env/
+venv/
 .Python
 env/
 venv/
@@ -61,6 +91,8 @@ node_modules/
 # Build outputs
 dist/
 build/
+# Benchmarks
+bench_results.txt
 # Build
 dist/
 build/
