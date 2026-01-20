@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -182,10 +183,10 @@ func isBooleanSIMD(v string) bool {
 	// This is more cache-friendly and potentially vectorizable
 	lower := strings.ToLower(v)
 	
-	// Fast path: single character booleans
+	// Fast path: single character booleans (excluding 0 and 1 which are integers)
 	if len(lower) == 1 {
 		c := lower[0]
-		return c == 't' || c == 'f' || c == 'y' || c == 'n' || c == '0' || c == '1'
+		return c == 't' || c == 'f' || c == 'y' || c == 'n'
 	}
 	
 	// Standard boolean values
@@ -333,7 +334,7 @@ func CalculateStatsSIMD(values []float64) VectorizedStatistics {
 	variance := (sumSq / float64(n)) - (mean * mean)
 	stdDev := 0.0
 	if variance > 0 {
-		stdDev = variance // Simplified - in real implementation would use sqrt
+		stdDev = math.Sqrt(variance)
 	}
 	
 	return VectorizedStatistics{
@@ -376,19 +377,36 @@ func calculateLikelihoodsSimple(values []string) map[DataType]float64 {
 		}
 		nonEmpty++
 		
+		isInt := false
+		isFloat := false
+		isBool := false
+		isDate := false
+		
+		// Check integer first (most specific numeric type)
 		if _, err := strconv.ParseInt(v, 10, 64); err == nil {
 			counts[TypeInteger]++
+			isInt = true
+		} else {
+			// Only check float if not an integer
+			if _, err := strconv.ParseFloat(v, 64); err == nil {
+				counts[TypeFloat]++
+				isFloat = true
+			}
 		}
-		if _, err := strconv.ParseFloat(v, 64); err == nil {
-			counts[TypeFloat]++
-		}
+		
 		if isBooleanSIMD(v) {
 			counts[TypeBoolean]++
+			isBool = true
 		}
 		if isDateSIMD(v) {
 			counts[TypeDate]++
+			isDate = true
 		}
-		counts[TypeString]++
+		
+		// Count as string only if it's NOT a specific type
+		if !isInt && !isFloat && !isBool && !isDate {
+			counts[TypeString]++
+		}
 	}
 	
 	if nonEmpty > 0 {

@@ -183,7 +183,6 @@ func (e *BayesianInferenceEngine) sampleValues(values []string) []string {
 	// Deterministic sampling using configured random seed
 	sampled := make([]string, e.config.SampleSize)
 	indices := e.rng.Perm(len(values))[:e.config.SampleSize]
-	sort.Ints(indices) // Sort for deterministic order
 	
 	for i, idx := range indices {
 		sampled[i] = values[idx]

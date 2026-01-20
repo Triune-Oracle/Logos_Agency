@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/Triune-Oracle/Logos_Agency/engine"
@@ -341,7 +342,7 @@ func TestBayesianInferenceEngine_EdgeCases(t *testing.T) {
 		{"Single empty string", []string{""}},
 		{"Multiple empty strings", []string{"", "", ""}},
 		{"Whitespace only", []string{"   ", "\t", "\n"}},
-		{"Very long string", []string{"a" + string(make([]byte, 10000))}},
+		{"Very long string", []string{strings.Repeat("a", 10000)}},
 	}
 
 	for _, tc := range tests {
