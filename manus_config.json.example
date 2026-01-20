@@ -1,0 +1,5 @@
+{
+  "INGEST_URL": "https://mindnexus.example.internal/api/v1/ingest/scroll",
+  "API_KEY": "REPLACE_WITH_YOUR_SECRET_API_KEY",
+  "SCROLL_DIR": "./CODEx"
+}
