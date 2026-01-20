@@ -17,6 +17,7 @@ var dateFormats = []string{
 	"01/02/2006",
 	"02-01-2006",
 	"Jan 2 2006",
+	"January 2 2006",
 	time.RFC3339,
 }
 
@@ -69,12 +70,14 @@ func InferColumnType(values []string) string {
 	allInt := true
 	allFloat := true
 	allDate := true
+	hasNonEmpty := false
 
 	for _, v := range values {
 		v = strings.TrimSpace(v)
 		if v == "" {
-			return "string"
+			continue // Skip empty values instead of early return
 		}
+		hasNonEmpty = true
 
 		// Early termination: if all types are ruled out, return immediately
 		if !allInt && !allFloat && !allDate {
