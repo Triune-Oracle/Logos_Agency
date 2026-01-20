@@ -22,6 +22,12 @@ from typing import Optional, Dict, Any
 import asyncio
 import functools
 
+# try to use aiofiles for async file I/O
+try:
+    import aiofiles  # type: ignore
+except Exception:
+    aiofiles = None  # type: ignore
+
 # try to use requests/aiohttp if available for nicer behavior; fall back to stdlib
 try:
     import requests  # type: ignore
@@ -63,7 +69,9 @@ def safe_write_json(path: str, obj: Any):
 
 # ---- Integration stubs (pluggable clients) ----
 class HTTPClient:
-    """Simple pluggable HTTP client supporting sync and async calls."""
+    """Simple pluggable HTTP client supporting sync and async calls with connection pooling."""
+    _session: Optional[Any] = None
+    _session_lock = asyncio.Lock()
 
     @staticmethod
     def sync_post(url: str, payload: Dict[str, Any], timeout: int = 10):
@@ -87,14 +95,36 @@ class HTTPClient:
             raise
 
     @staticmethod
+    async def get_session():
+        """Get or create a shared aiohttp session with connection pooling."""
+        if HTTPClient._session is None:
+            async with HTTPClient._session_lock:
+                if HTTPClient._session is None and aiohttp:
+                    # Create session with connection pooling
+                    connector = aiohttp.TCPConnector(limit=100, limit_per_host=30)
+                    HTTPClient._session = aiohttp.ClientSession(connector=connector)
+        return HTTPClient._session
+
+    @staticmethod
+    async def close_session():
+        """Close the shared session."""
+        if HTTPClient._session is not None:
+            await HTTPClient._session.close()
+            HTTPClient._session = None
+
+    @staticmethod
     async def async_post(url: str, payload: Dict[str, Any], timeout: int = 10):
         if aiohttp:
-            async with aiohttp.ClientSession() as sess:
-                async with sess.post(url, json=payload, timeout=timeout) as resp:
+            session = await HTTPClient.get_session()
+            if session:
+                async with session.post(url, json=payload, timeout=timeout) as resp:
                     resp.raise_for_status()
                     return await resp.json()
         # fallback: run sync in executor
-        loop = asyncio.get_event_loop()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.get_event_loop()
         func = functools.partial(HTTPClient.sync_post, url, payload, timeout)
         return await loop.run_in_executor(None, func)
 
@@ -189,6 +219,12 @@ class SupremeHead:
         self.mind_nexus = MindNexusClient(self.config["mind_nexus_url"])
         self.swarm_engine = SwarmEngine(self.config.get("swarm_config", {}))
         self.ledger_path = self.config.get("codex_ledger_path", "codex_ledger.log")
+        
+        # Batch ledger writing
+        self._ledger_buffer: list = []
+        self._ledger_buffer_lock = asyncio.Lock()
+        self._ledger_buffer_size = self.config.get("ledger_buffer_size", 10)
+        
         logger.info("Supreme Head Initialized. Awaiting Scroll Ingestion.")
 
     def _load_config(self, path: str) -> Dict[str, Any]:
@@ -219,6 +255,51 @@ class SupremeHead:
         except Exception:
             logger.exception("Failed to write to ledger")
 
+    # Async ledger recording with batching
+    async def _record_event_async(self, event_type: str, payload: Dict[str, Any]):
+        entry = {
+            "event_type": event_type,
+            "timestamp": now_iso(),
+            "payload": payload
+        }
+        
+        async with self._ledger_buffer_lock:
+            self._ledger_buffer.append(entry)
+            
+            # Flush when buffer reaches size threshold
+            if len(self._ledger_buffer) >= self._ledger_buffer_size:
+                await self._flush_ledger_buffer()
+    
+    async def _flush_ledger_buffer(self):
+        """Flush buffered ledger entries to disk."""
+        if not self._ledger_buffer:
+            return
+            
+        try:
+            batch = '\n'.join(json.dumps(e, ensure_ascii=False) for e in self._ledger_buffer)
+            
+            if aiofiles:
+                # Use async file I/O if available
+                async with aiofiles.open(self.ledger_path, "a", encoding="utf-8") as f:
+                    await f.write(batch + "\n")
+            else:
+                # Fallback: run sync I/O in executor to avoid blocking event loop
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = asyncio.get_event_loop()
+                    
+                def write_batch():
+                    with open(self.ledger_path, "a", encoding="utf-8") as f:
+                        f.write(batch + "\n")
+                        
+                await loop.run_in_executor(None, write_batch)
+                
+            logger.debug(f"Flushed {len(self._ledger_buffer)} ledger entries")
+            self._ledger_buffer.clear()
+        except Exception:
+            logger.exception("Failed to flush ledger buffer")
+
     # Safe call wrapper with simple retries
     def _safe_call(self, fn, *args, retries: Optional[int] = None, **kwargs):
         r = retries if retries is not None else self.config.get("retries", 2)
@@ -230,8 +311,25 @@ class SupremeHead:
             except Exception as e:
                 last_exc = e
                 logger.warning(f"Attempt {attempt}/{r} failed for {fn.__name__}: {e}")
-                time.sleep(delay)
+                if attempt < r:  # Only sleep if we're going to retry
+                    time.sleep(delay)
         logger.error(f"All {r} attempts failed for {fn.__name__}")
+        raise last_exc
+
+    # Async safe call wrapper with simple retries
+    async def _safe_call_async(self, fn, *args, retries: Optional[int] = None, **kwargs):
+        r = retries if retries is not None else self.config.get("retries", 2)
+        delay = self.config.get("retry_delay_seconds", 1)
+        last_exc = None
+        for attempt in range(1, r + 1):
+            try:
+                return await fn(*args, **kwargs)
+            except Exception as e:
+                last_exc = e
+                logger.warning(f"Attempt {attempt}/{r} failed for async {fn.__name__}: {e}")
+                if attempt < r:  # Only sleep if we're going to retry
+                    await asyncio.sleep(delay)
+        logger.error(f"All {r} attempts failed for async {fn.__name__}")
         raise last_exc
 
     # canonical scroll format
@@ -294,14 +392,17 @@ class SupremeHead:
     async def ingest_scroll_async(self, raw_data: str, source: str) -> Dict[str, Any]:
         logger.info(f"[async] Ingesting scroll from {source}")
         scroll = self._make_scroll(raw_data, source)
-        self._record_event("scroll_received_async", {"source": source, "snippet": raw_data[:160]})
+        await self._record_event_async("scroll_received_async", {"source": source, "snippet": raw_data[:160]})
 
-        # async analyze (try async endpoint, fallback to sync)
+        # async analyze with safe retry
         try:
             if hasattr(self.mind_nexus, "analyze_async"):
-                analysis = await self.mind_nexus.analyze_async(raw_data, {"source": source})
+                analysis = await self._safe_call_async(self.mind_nexus.analyze_async, raw_data, {"source": source})
             else:
-                loop = asyncio.get_event_loop()
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = asyncio.get_event_loop()
                 analysis = await loop.run_in_executor(None, functools.partial(self.mind_nexus.analyze, raw_data, {"source": source}))
         except Exception:
             logger.exception("Async analysis failed")
@@ -313,28 +414,34 @@ class SupremeHead:
             }
 
         score = analysis.get("value_score", 0)
-        self._record_event("scroll_analyzed_async", {"score": score})
+        await self._record_event_async("scroll_analyzed_async", {"score": score})
 
         # decision async
         action = None
         try:
             if score >= int(self.config.get("nft_threshold", 85)):
                 if hasattr(self.swarm_engine, "trigger_nft_mint_async"):
-                    res = await self.swarm_engine.trigger_nft_mint_async(raw_data, analysis)
+                    res = await self._safe_call_async(self.swarm_engine.trigger_nft_mint_async, raw_data, analysis)
                 else:
-                    loop = asyncio.get_event_loop()
+                    try:
+                        loop = asyncio.get_running_loop()
+                    except RuntimeError:
+                        loop = asyncio.get_event_loop()
                     res = await loop.run_in_executor(None, functools.partial(self.swarm_engine.trigger_nft_mint, raw_data, analysis))
                 action = "NFT Mint Triggered"
-                self._record_event("nft_triggered_async", {"score": score, "result": res})
+                await self._record_event_async("nft_triggered_async", {"score": score, "result": res})
             else:
                 payload = {"scroll": scroll, "analysis": analysis}
                 if hasattr(self.memory_core, "store_async"):
-                    res = await self.memory_core.store_async(payload)
+                    res = await self._safe_call_async(self.memory_core.store_async, payload)
                 else:
-                    loop = asyncio.get_event_loop()
+                    try:
+                        loop = asyncio.get_running_loop()
+                    except RuntimeError:
+                        loop = asyncio.get_event_loop()
                     res = await loop.run_in_executor(None, functools.partial(self.memory_core.store, payload))
                 action = "Stored in Memory Core"
-                self._record_event("scroll_stored_async", {"score": score, "result": res})
+                await self._record_event_async("scroll_stored_async", {"score": score, "result": res})
         except Exception:
             logger.exception("Async action failed")
             action = "Action Failed"
@@ -346,6 +453,16 @@ class SupremeHead:
             "source": source,
             "analysis": analysis
         }
+    
+    async def cleanup(self):
+        """Cleanup resources and flush pending data."""
+        # Flush any pending ledger entries
+        async with self._ledger_buffer_lock:
+            await self._flush_ledger_buffer()
+        
+        # Close HTTP session
+        await HTTPClient.close_session()
+        logger.info("Supreme Head cleanup complete.")
 
 
 # ---- Quick CLI for manual testing ----
