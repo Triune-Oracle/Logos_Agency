@@ -115,6 +115,11 @@ func InferColumnType(values []string) string {
 		}
 	}
 
+	// If all values are empty, return string
+	if !hasNonEmpty {
+		return "string"
+	}
+
 	var result string
 	if allInt {
 		result = "int"
