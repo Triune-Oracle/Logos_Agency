@@ -1,0 +1,11 @@
+{
+  "memory_core_url": "http://localhost:3000",
+  "mind_nexus_url": "http://localhost:3001",
+  "nft_threshold": 85,
+  "codex_ledger_path": "logs/codex_ledger.log",
+  "retries": 2,
+  "retry_delay_seconds": 1,
+  "swarm_config": {
+    "mint_service_url": "http://localhost:4000/mint"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "scrolls": [
+    {
+      "scroll_id":"SCROLL_001",
+      "task_id":"LOGOS-001",
+      "title":"HeuristicScanner Type Inference Coverage + Benchmarks",
+      "repo":"Triune-Oracle/Logos_Agency",
+      "priority":"high"
+    },
+    {
+      "scroll_id":"SCROLL_002",
+      "task_id":"LOGOS-002",
+      "title":"Repository Setup & Onboarding Checklist",
+      "repo":"Triune-Oracle/Logos_Agency",
+      "priority":"high"
+    },
+    {
+      "scroll_id":"SCROLL_003",
+      "task_id":"LOGOS-003",
+      "title":"Comprehensive benchmark suite vs pandas/csvkit",
+      "repo":"Triune-Oracle/Logos_Agency",
+      "priority":"high"
+    }
+  ]
+}
