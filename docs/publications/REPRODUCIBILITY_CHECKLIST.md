@@ -18,8 +18,8 @@ This checklist ensures that all LogosTalisman Phase II validation experiments ca
 ### 1.2 Dependencies
 - [x] **requirements.txt:**
   ```
-  torch==1.12.0
-  torchvision==0.13.0
+  torch==2.6.0
+  torchvision==0.21.0
   numpy==1.23.0
   scipy==1.9.0
   scikit-learn==1.1.1
@@ -27,8 +27,12 @@ This checklist ensures that all LogosTalisman Phase II validation experiments ca
   matplotlib==3.5.2
   seaborn==0.11.2
   tensorboard==2.9.1
-  horovod==0.27.0
+  # horovod is NOT pinned — all versions <=0.28.1 have an unpatched
+  # command-injection vulnerability. See requirements.txt for details.
+  pytorch-fid==0.2.1
+  scikit-image==0.19.3
   pytest==7.1.2
+  huggingface_hub==0.11.1
   ```
 
 - [x] **Docker Image:**
