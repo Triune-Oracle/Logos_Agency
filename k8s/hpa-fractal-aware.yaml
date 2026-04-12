@@ -1,0 +1,52 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# HPA – Fractal-Aware Autoscaling for LogosTalisman training pods
+#
+# Triggers:
+#   Scale-up  when D₀ variance > 0.5  (add 4 replicas, max 64)
+#   Scale-down when D₀ stabilises     (remove 2 replicas, min 8)
+#
+# Cooldown: 60 s between scaling events (stabilisationWindowSeconds below)
+# ──────────────────────────────────────────────────────────────────────────────
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: logostalisman-fractal-hpa
+  namespace: logostalisman
+  labels:
+    app: logostalisman
+    component: fractal-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: logostalisman-training
+
+  minReplicas: 8
+  maxReplicas: 64
+
+  metrics:
+    - type: Pods
+      pods:
+        metric:
+          name: logostalisman_fractal_complexity_metric
+        target:
+          type: AverageValue
+          # D₀ variance threshold – values above 0.5 trigger scale-up.
+          averageValue: "500m"   # 0.5 expressed as a Kubernetes quantity (milli-units)
+
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 4          # add 4 pods per scaling event
+          periodSeconds: 60
+      selectPolicy: Max
+
+    scaleDown:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2          # remove 2 pods per scaling event
+          periodSeconds: 60
+      selectPolicy: Min
