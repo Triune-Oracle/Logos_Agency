@@ -52,6 +52,9 @@
 - [x] Models will be shared on HuggingFace
 - [x] Benchmarks will be released on GitHub
 - [x] Documentation under CC BY 4.0
+- [x] Artifact packaging complete (`ARTIFACTS.md`, `package_artifacts.sh`)
+- [x] Environment files provided (`requirements.txt`, `environment.yml`)
+- [x] Environment verification script provided (`verify_environment.sh`)
 
 ## ArXiv Submission Readiness
 

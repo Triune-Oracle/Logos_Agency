@@ -1,6 +1,11 @@
 package tests
 
 import (
+	"bufio"
+	"encoding/csv"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -380,5 +385,122 @@ func TestLocalePriors(t *testing.T) {
 			prior.Date < 0 || prior.Boolean < 0 {
 			t.Errorf("Negative prior for locale %v", locale)
 		}
+	}
+}
+
+// loadFixture reads lines from a fixture file in tests/fixtures/
+func loadFixture(t *testing.T, name string) []string {
+	t.Helper()
+	path := filepath.Join("fixtures", name)
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("failed to open fixture %s: %v", name, err)
+	}
+	defer f.Close()
+
+	var lines []string
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("error reading fixture %s: %v", name, err)
+	}
+	return lines
+}
+
+// TestFixtures_ExpectedOutputs loads each fixture file listed in
+// fixtures/expected_outputs.csv and asserts that the inference engine
+// produces the documented expected type with the specified confidence.
+// This test acts as a version-controlled regression check: any change
+// to inference behaviour that shifts expected outputs must be reflected
+// in expected_outputs.csv with a deliberate review.
+func TestFixtures_ExpectedOutputs(t *testing.T) {
+	csvPath := filepath.Join("fixtures", "expected_outputs.csv")
+	f, err := os.Open(csvPath)
+	if err != nil {
+		t.Fatalf("failed to open expected_outputs.csv: %v", err)
+	}
+	defer f.Close()
+
+	r := csv.NewReader(f)
+	r.Comment = '#'
+	records, err := r.ReadAll()
+	if err != nil {
+		t.Fatalf("failed to parse expected_outputs.csv: %v", err)
+	}
+
+	for _, rec := range records {
+		if len(rec) < 4 {
+			continue
+		}
+		fixtureName := strings.TrimSpace(rec[0])
+		expectedType := strings.TrimSpace(rec[1])
+		minConfidence, err := strconv.ParseFloat(strings.TrimSpace(rec[2]), 64)
+		if err != nil {
+			t.Errorf("invalid min_confidence in %s: %v", fixtureName, err)
+			continue
+		}
+		seed, err := strconv.ParseInt(strings.TrimSpace(rec[3]), 10, 64)
+		if err != nil {
+			t.Errorf("invalid seed in %s: %v", fixtureName, err)
+			continue
+		}
+
+		t.Run(fixtureName, func(t *testing.T) {
+			values := loadFixture(t, fixtureName)
+
+			config := engine.DefaultConfig()
+			config.RandomSeed = seed
+			eng := engine.NewBayesianInferenceEngine(config)
+
+			result := eng.InferType(values)
+			gotType := result.InferredType.String()
+
+			if gotType != expectedType {
+				t.Errorf("fixture %s: expected type %q, got %q", fixtureName, expectedType, gotType)
+			}
+			if result.Confidence < minConfidence {
+				t.Errorf("fixture %s: expected confidence >= %.2f, got %.4f",
+					fixtureName, minConfidence, result.Confidence)
+			}
+		})
+	}
+}
+
+// TestFixtures_Deterministic runs each fixture twice with the same seed and
+// asserts that both runs produce identical results.
+func TestFixtures_Deterministic(t *testing.T) {
+	fixtures := []string{
+		"integer_values.txt",
+		"float_values.txt",
+		"string_values.txt",
+		"date_values.txt",
+		"boolean_values.txt",
+	}
+
+	for _, name := range fixtures {
+		t.Run(name, func(t *testing.T) {
+			values := loadFixture(t, name)
+
+			const seed = int64(12345)
+			config1 := engine.DefaultConfig()
+			config1.RandomSeed = seed
+			config2 := engine.DefaultConfig()
+			config2.RandomSeed = seed
+
+			r1 := engine.NewBayesianInferenceEngine(config1).InferType(values)
+			r2 := engine.NewBayesianInferenceEngine(config2).InferType(values)
+
+			if r1.InferredType != r2.InferredType {
+				t.Errorf("non-deterministic type: run1=%v run2=%v", r1.InferredType, r2.InferredType)
+			}
+			if r1.Confidence != r2.Confidence {
+				t.Errorf("non-deterministic confidence: run1=%v run2=%v", r1.Confidence, r2.Confidence)
+			}
+		})
 	}
 }
