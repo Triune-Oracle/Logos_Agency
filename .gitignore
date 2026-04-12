@@ -93,6 +93,7 @@ dist/
 build/
 # Benchmarks
 bench_results.txt
+bench_results_python.txt
 # Build
 dist/
 build/
