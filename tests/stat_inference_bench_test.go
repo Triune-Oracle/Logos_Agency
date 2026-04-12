@@ -347,6 +347,34 @@ func BenchmarkCalculateStatsSIMD_10000(b *testing.B) {
 	}
 }
 
+// Scalar fallback benchmarks — paired with the SIMD benchmarks above so the
+// speedup ratio can be observed directly. On amd64/arm64 the SIMD-dispatched
+// path should outperform the scalar path by ≥2x on large inputs.
+
+func BenchmarkCalculateStatsScalar_1000(b *testing.B) {
+	data := make([]float64, 1000)
+	for i := 0; i < 1000; i++ {
+		data[i] = float64(i)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = engine.CalculateStatsScalar(data)
+	}
+}
+
+func BenchmarkCalculateStatsScalar_10000(b *testing.B) {
+	data := make([]float64, 10000)
+	for i := 0; i < 10000; i++ {
+		data[i] = float64(i)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = engine.CalculateStatsScalar(data)
+	}
+}
+
 // Memory allocation benchmarks
 
 func BenchmarkBayesianInference_Memory_1000(b *testing.B) {
