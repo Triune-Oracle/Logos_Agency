@@ -5,7 +5,6 @@ package engine
 import (
     "fmt"
     "math"
-    "sync"
 )
 
 // Prior distribution
@@ -56,7 +55,7 @@ func getLocaleAwarePrior(locale string) Prior {
 // Full Bayesian inference
 func BayesianInference(data []float64, locale string) (float64, float64) {
     prior := getLocaleAwarePrior(locale)
-    dataType := selectType(data)
+    _ = selectType(data)
 
     // Dummy implementation for using likelihood
     var mean, variance float64
