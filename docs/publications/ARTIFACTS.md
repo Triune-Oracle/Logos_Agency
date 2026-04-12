@@ -129,7 +129,7 @@ Expected output:
 ```
 === LogosTalisman Environment Verification ===
 ✓ Python 3.9.x
-✓ PyTorch 1.12.0 (CUDA available)
+✓ PyTorch 2.6.0 (CUDA available)
 ✓ NumPy 1.23.0
 ✓ SciPy 1.9.0
 ✓ scikit-learn 1.1.1
@@ -145,8 +145,8 @@ Expected output:
 ### Python Packages (`requirements.txt`)
 
 ```
-torch==1.12.0
-torchvision==0.13.0
+torch==2.6.0
+torchvision==0.21.0
 numpy==1.23.0
 scipy==1.9.0
 scikit-learn==1.1.1
@@ -154,7 +154,9 @@ pandas==1.4.3
 matplotlib==3.5.2
 seaborn==0.11.2
 tensorboard==2.9.1
-horovod==0.27.0
+# horovod is NOT pinned: all released versions (<=0.28.1) have an unpatched
+# command-injection vulnerability. Install only if needed for distributed
+# training (Protocols B & C) and after checking https://github.com/horovod/horovod.
 pytorch-fid==0.2.1
 scikit-image==0.19.3
 pytest==7.1.2
@@ -172,9 +174,9 @@ channels:
   - defaults
 dependencies:
   - python=3.9
-  - cudatoolkit=11.6
-  - pytorch=1.12.0
-  - torchvision=0.13.0
+  - cudatoolkit=11.8
+  - pytorch=2.6.0
+  - torchvision=0.21.0
   - numpy=1.23.0
   - scipy=1.9.0
   - scikit-learn=1.1.1
@@ -183,7 +185,7 @@ dependencies:
   - seaborn=0.11.2
   - pip:
     - tensorboard==2.9.1
-    - horovod==0.27.0
+    # horovod is NOT listed: unpatched command-injection vulnerability (<=0.28.1).
     - pytorch-fid==0.2.1
     - scikit-image==0.19.3
     - pytest==7.1.2

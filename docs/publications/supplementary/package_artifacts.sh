@@ -123,8 +123,8 @@ if [ -f "${REPO_ROOT}/requirements.txt" ]; then
 else
     info "Generating requirements.txt from checklist values..."
     cat > "${BUNDLE_DIR}/requirements.txt" <<'REQS'
-torch==1.12.0
-torchvision==0.13.0
+torch==2.6.0
+torchvision==0.21.0
 numpy==1.23.0
 scipy==1.9.0
 scikit-learn==1.1.1
@@ -132,7 +132,10 @@ pandas==1.4.3
 matplotlib==3.5.2
 seaborn==0.11.2
 tensorboard==2.9.1
-horovod==0.27.0
+# horovod is NOT pinned here: all released versions (<=0.28.1) contain an
+# unpatched command-injection vulnerability (no fix available upstream).
+# Install horovod only if you need distributed training (Protocols B & C)
+# and only after checking https://github.com/horovod/horovod for a patch.
 pytorch-fid==0.2.1
 scikit-image==0.19.3
 pytest==7.1.2
@@ -156,9 +159,9 @@ channels:
   - defaults
 dependencies:
   - python=3.9
-  - cudatoolkit=11.6
-  - pytorch=1.12.0
-  - torchvision=0.13.0
+  - cudatoolkit=11.8
+  - pytorch=2.6.0
+  - torchvision=0.21.0
   - numpy=1.23.0
   - scipy=1.9.0
   - scikit-learn=1.1.1
@@ -167,7 +170,10 @@ dependencies:
   - seaborn=0.11.2
   - pip:
     - tensorboard==2.9.1
-    - horovod==0.27.0
+    # horovod is NOT listed here: all released versions (<=0.28.1) contain an
+    # unpatched command-injection vulnerability (no fix available upstream).
+    # Install only if needed for distributed training (Protocols B & C) and
+    # only after confirming a patched release at https://github.com/horovod/horovod.
     - pytorch-fid==0.2.1
     - scikit-image==0.19.3
     - pytest==7.1.2

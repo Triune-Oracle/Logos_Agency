@@ -13,6 +13,7 @@ FAIL=0
 
 ok()   { echo "  ✓  $*"; PASS=$((PASS + 1)); }
 fail() { echo "  ✗  $*"; FAIL=$((FAIL + 1)); }
+warn() { echo "  ⚠  $*"; }
 info() { echo "       $*"; }
 sep()  { echo ""; }
 
@@ -58,8 +59,8 @@ check_pkg() {
     fi
 }
 
-check_pkg "torch"        "1.12.0"
-check_pkg "torchvision"  "0.13.0"
+check_pkg "torch"        "2.6.0"
+check_pkg "torchvision"  "0.21.0"
 check_pkg "numpy"        "1.23.0"
 check_pkg "scipy"        "1.9.0"
 check_pkg "scikit-learn" "1.1.1"   "sklearn"
@@ -114,9 +115,15 @@ fi
 
 if python3 -c "import horovod" &>/dev/null; then
     HVOD_VER=$(python3 -c "import horovod; print(horovod.__version__)" 2>/dev/null || echo "unknown")
-    ok "horovod ${HVOD_VER}"
+    # All horovod versions <=0.28.1 have an unpatched command-injection vulnerability.
+    warn "horovod ${HVOD_VER} detected — WARNING: all horovod versions <=0.28.1 have an"
+    info "  unpatched command-injection vulnerability (no fix available upstream)."
+    info "  See https://github.com/horovod/horovod for the latest security status."
+    info "  Use only in isolated/trusted environments until a patched version is released."
 else
     info "horovod not installed — required only for distributed training (Protocol B/C)"
+    info "  NOTE: all horovod versions <=0.28.1 have an unpatched command-injection"
+    info "  vulnerability. Check https://github.com/horovod/horovod before installing."
 fi
 sep
 
