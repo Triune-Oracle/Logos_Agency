@@ -1,13 +1,21 @@
 from __future__ import annotations
 
+import logging
 import os
 from typing import Optional
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import PlainTextResponse
-from twilio.twiml.voice_response import VoiceResponse, Gather
+from twilio.twiml.voice_response import Gather, VoiceResponse
+
+logger = logging.getLogger("skipcalls")
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
 
 app = FastAPI(title="SkipCalls MVP")
+
+PRIORITY_KEYWORDS = frozenset(
+    ["urgent", "emergency", "lawyer", "school", "family", "hospital"]
+)
 
 
 def build_base_url(request: Request) -> str:
@@ -95,18 +103,15 @@ async def process_call(
 
     # Basic placeholder routing logic.
     normalized = transcript.lower()
-    priority_keywords = ["urgent", "emergency", "lawyer", "school", "family", "hospital"]
-    likely_priority = any(word in normalized for word in priority_keywords)
+    likely_priority = any(word in normalized for word in PRIORITY_KEYWORDS)
 
-    print(
-        {
-            "event": "call_processed",
-            "call_sid": CallSid,
-            "from": From,
-            "transcript": transcript,
-            "confidence": confidence,
-            "priority": likely_priority,
-        }
+    logger.info(
+        "call_processed call_sid=%s from=%s confidence=%s priority=%s transcript=%r",
+        CallSid,
+        From,
+        confidence,
+        likely_priority,
+        transcript,
     )
 
     vr = VoiceResponse()
