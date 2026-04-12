@@ -100,12 +100,10 @@ func (hs *HeuristicScanner) InferColumnType(values []string) (string, float64) {
 		}
 
 		// Check timestamp (date + time) before plain date
-		isTS := false
 		for _, fmt := range extendedDateFormats {
 			if t, err := time.Parse(fmt, v); err == nil {
 				h, m, s := t.Clock()
 				if h != 0 || m != 0 || s != 0 {
-					isTS = true
 					c.timestamp++
 				} else {
 					c.date++
@@ -113,7 +111,6 @@ func (hs *HeuristicScanner) InferColumnType(values []string) (string, float64) {
 				break
 			}
 		}
-		_ = isTS
 	}
 
 	if nonNull == 0 {

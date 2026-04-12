@@ -335,6 +335,8 @@ func TestDecimalPrecisionScale(t *testing.T) {
 		{"1.50", 3, 2},
 		{"42", 2, 0},
 		{"-9.99", 3, 2},
+		// Scientific notation: the exponent is stripped before counting digits,
+		// so "1.23e10" is treated as mantissa "1.23" → precision 3, scale 2.
 		{"1.23e10", 3, 2},
 		{"0.001", 3, 3},
 	}
