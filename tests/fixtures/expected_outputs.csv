@@ -1,0 +1,19 @@
+# Statistical Inference Test Fixtures
+# Version: 1.0
+# Format: fixture_file -> expected_inferred_type,min_confidence
+#
+# These fixtures define the canonical expected outputs for the
+# BayesianInferenceEngine. Any change to expected outputs must be
+# reviewed and versioned here.
+#
+# Columns:
+#   fixture_file      - path relative to tests/fixtures/
+#   expected_type     - one of: int, float, string, date, boolean
+#   min_confidence    - minimum acceptable confidence (0.0 - 1.0)
+#   seed              - random seed used for deterministic testing
+#
+integer_values.txt,int,0.80,42
+float_values.txt,float,0.80,42
+string_values.txt,string,0.80,42
+date_values.txt,date,0.70,42
+boolean_values.txt,boolean,0.70,42
