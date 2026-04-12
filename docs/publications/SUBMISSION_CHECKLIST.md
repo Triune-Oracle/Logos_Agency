@@ -75,7 +75,7 @@
 ### Timeline
 - [x] Documentation complete: January 20, 2026
 - [ ] Internal review: January 27, 2026
-- [ ] LaTeX conversion: February 13, 2026
+- [x] LaTeX conversion: February 13, 2026 — NeurIPS `.tex` source created (`conference/LogosTalisman_NeurIPS.tex`)
 - [ ] ArXiv submission: February 16, 2026
 - [ ] Expected publication: February 20, 2026
 
@@ -83,19 +83,24 @@
 
 ### NeurIPS 2026
 - [x] 8-page paper prepared
-- [ ] Adapt to NeurIPS LaTeX template
+- [x] NeurIPS LaTeX template adapted (`conference/LogosTalisman_NeurIPS.tex`)
+- [x] BibTeX bibliography created (`conference/references.bib`)
+- [x] Camera-ready checklist created (`conference/camera_ready_checklist.md`)
+- [ ] Download `neurips_2024.sty` from NeurIPS website and compile PDF
+- [ ] Generate figures (Fig. 1 quality, Fig. 2 scaling, Fig. 3 timeline)
+- [ ] Spell-check and grammar review by ≥ 2 co-authors
 - [ ] Deadline: May 15, 2026
 - [ ] Track: Machine Learning Systems
 
 ### ICML 2026
 - [x] 8-page paper prepared
-- [ ] Adapt to ICML format
+- [ ] Adapt LaTeX source to ICML 2026 style file
 - [ ] Deadline: January 29, 2026
 - [ ] Track: Deep Learning Applications
 
 ### ICLR 2027
 - [x] 8-page paper prepared
-- [ ] Adapt to ICLR format
+- [ ] Adapt LaTeX source to ICLR 2027 style file
 - [ ] Deadline: September 25, 2026
 - [ ] Track: Representation Learning
 
