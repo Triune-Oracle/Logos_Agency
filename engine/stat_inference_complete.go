@@ -42,12 +42,11 @@ func getLocaleAwarePrior(locale string) Prior {
 	return Prior{Type: "uniform", Params: []float64{0, 1}}
 }
 
-// BayesianInference performs full Bayesian inference on the given data with locale-aware priors
+// BayesianInference performs full Bayesian inference on the given data with locale-aware priors.
+// It selects a locale-specific prior, computes the posterior mean and variance, and returns both.
 func BayesianInference(data []float64, locale string) (float64, float64) {
 	prior := getLocaleAwarePrior(locale)
-
 	mean, variance := computePosterior(data, prior)
-
 	fmt.Printf("Computed Mean: %f, Variance: %f, Prior Type: %s\n", mean, variance, prior.Type)
 	return mean, variance
 }
