@@ -3,6 +3,8 @@
 package engine
 
 import (
+	"fmt"
+	"math"
 )
 
 // Prior distribution
@@ -41,7 +43,8 @@ func getLocaleAwarePrior(locale string) Prior {
 }
 
 // BayesianInference performs full Bayesian inference on the given data with locale-aware priors
-func BayesianInference(data []float64, locale string) (float64, float64)  
+func BayesianInference(data []float64, locale string) (float64, float64) {
+	prior := getLocaleAwarePrior(locale)
 
 	mean, variance := computePosterior(data, prior)
 
