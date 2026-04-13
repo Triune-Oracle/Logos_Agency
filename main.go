@@ -1,12 +1,15 @@
 package main
 
 import (
+	"fmt"
+	"log"
+	"math"
+	"os"
 	"strconv"
-	"time"
 	"strings"
 	"sync"
-	"log"
-	"os"
+	"time"
+	"unicode"
 )
 
 // EnablePerformanceLogging controls whether performance metrics are logged
@@ -19,6 +22,189 @@ var dateFormats = []string{
 	"Jan 2 2006",
 	"January 2 2006",
 	time.RFC3339,
+}
+
+// extendedDateFormats includes additional formats for HeuristicScanner
+var extendedDateFormats = []string{
+	"2006-01-02",
+	"01/02/2006",
+	"02/01/2006",
+	"02-Jan-2006",
+	"02-January-2006",
+	"Jan 2 2006",
+	"January 2 2006",
+	"2006-01-02 15:04:05",
+	"2006-01-02T15:04:05",
+	time.RFC3339,
+}
+
+// booleanValues maps lowercase string representations to bool
+var booleanValues = map[string]bool{
+	"true": true, "false": true,
+	"yes": true, "no": true,
+	"t": true, "f": true,
+	"y": true, "n": true,
+	"1": true, "0": true,
+}
+
+// HeuristicScanner provides probabilistic column type inference with configurable confidence thresholds.
+type HeuristicScanner struct {
+	// ConfidenceThreshold is the minimum fraction of non-null values that must match a type
+	// for that type to be returned (default 0.95).
+	ConfidenceThreshold float64
+}
+
+// NewHeuristicScanner creates a HeuristicScanner with the default 95% confidence threshold.
+func NewHeuristicScanner() *HeuristicScanner {
+	return &HeuristicScanner{ConfidenceThreshold: 0.95}
+}
+
+// InferColumnType infers the SQL type of a column and returns the type name together
+// with the fraction of non-null values that matched the inferred type.
+//
+// Returned type names: "INTEGER", "DECIMAL(p,s)", "TIMESTAMP", "DATE", "BOOLEAN", "TEXT".
+// If the best-matched type's confidence is below ConfidenceThreshold the function
+// returns "TEXT" with that confidence score.
+func (hs *HeuristicScanner) InferColumnType(values []string) (string, float64) {
+	type counts struct{ boolean, integer, decimal, timestamp, date int }
+	var c counts
+	var maxPrecision, maxScale int
+
+	nonNull := 0
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v == "" || strings.EqualFold(v, "null") || strings.EqualFold(v, "nil") {
+			continue
+		}
+		nonNull++
+		lower := strings.ToLower(v)
+
+		if booleanValues[lower] {
+			c.boolean++
+		}
+		if _, err := strconv.ParseInt(v, 10, 64); err == nil {
+			c.integer++
+		}
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			// Reject values too large to represent without overflow
+			if !math.IsInf(f, 0) && !math.IsNaN(f) {
+				p, s := decimalPrecisionScale(v)
+				c.decimal++
+				if p > maxPrecision {
+					maxPrecision = p
+				}
+				if s > maxScale {
+					maxScale = s
+				}
+			}
+		}
+
+		// Check timestamp (date + time) before plain date
+		for _, fmt := range extendedDateFormats {
+			if t, err := time.Parse(fmt, v); err == nil {
+				h, m, s := t.Clock()
+				if h != 0 || m != 0 || s != 0 {
+					c.timestamp++
+				} else {
+					c.date++
+				}
+				break
+			}
+		}
+	}
+
+	if nonNull == 0 {
+		return "TEXT", 0.0
+	}
+
+	// Build candidates in specificity order so the most descriptive type wins
+	type candidate struct {
+		typeName   string
+		matchCount int
+	}
+	decimalType := "DECIMAL"
+	if maxPrecision > 0 {
+		decimalType = fmt.Sprintf("DECIMAL(%d,%d)", maxPrecision, maxScale)
+	}
+	candidates := []candidate{
+		{"BOOLEAN", c.boolean},
+		{"INTEGER", c.integer},
+		{decimalType, c.decimal},
+		{"TIMESTAMP", c.timestamp},
+		{"DATE", c.date},
+	}
+
+	// Pick the first candidate whose confidence meets the threshold
+	for _, cand := range candidates {
+		conf := float64(cand.matchCount) / float64(nonNull)
+		if conf >= hs.ConfidenceThreshold {
+			return cand.typeName, conf
+		}
+	}
+
+	// No type met threshold; return TEXT with the confidence of the best non-boolean match
+	bestConf := 0.0
+	for _, cand := range candidates[1:] { // skip boolean
+		conf := float64(cand.matchCount) / float64(nonNull)
+		if conf > bestConf {
+			bestConf = conf
+		}
+	}
+	return "TEXT", bestConf
+}
+
+// decimalPrecisionScale returns (total significant digits, digits after decimal point) for a
+// numeric string.  It handles sign, leading zeros, and trailing zeros.
+func decimalPrecisionScale(v string) (precision, scale int) {
+	v = strings.TrimSpace(v)
+	// Strip sign
+	if len(v) > 0 && (v[0] == '+' || v[0] == '-') {
+		v = v[1:]
+	}
+	// Remove exponent part for precision counting
+	if idx := strings.IndexAny(v, "eE"); idx >= 0 {
+		v = v[:idx]
+	}
+	dotIdx := strings.Index(v, ".")
+	if dotIdx < 0 {
+		// Integer-like – count significant digits (strip leading zeros)
+		digits := strings.TrimLeft(v, "0")
+		if digits == "" {
+			digits = "0"
+		}
+		return len(digits), 0
+	}
+	intPart := v[:dotIdx]
+	fracPart := v[dotIdx+1:]
+
+	// Count significant digits in integer part (strip leading zeros)
+	intSig := strings.TrimLeft(intPart, "0")
+	intDigits := len(intSig)
+
+	// Fractional digits (keep trailing zeros as they indicate precision)
+	fracDigits := len(fracPart)
+
+	// Filter out non-digit characters just in case
+	intDigits = countDigits(intSig)
+	fracDigits = countDigits(fracPart)
+
+	scale = fracDigits
+	precision = intDigits + fracDigits
+	if precision == 0 {
+		precision = 1 // at least "0"
+	}
+	return precision, scale
+}
+
+// countDigits counts the number of digit characters in s.
+func countDigits(s string) int {
+	n := 0
+	for _, r := range s {
+		if unicode.IsDigit(r) {
+			n++
+		}
+	}
+	return n
 }
 
 // TypeCache provides thread-safe caching for column type inferences
