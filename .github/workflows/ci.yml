@@ -8,17 +8,9 @@ on:
 
 jobs:
   # ── Go: vet, build, test, benchmark ─────────────────────────────────────────
-  # Only runs when Go source, module files, or Makefile change.
   go:
     name: Go
     runs-on: ubuntu-latest
-    # Skip this job if only frontend/package files changed
-    if: |
-      github.event_name == 'push' ||
-      (github.event_name == 'pull_request' &&
-       contains(toJson(github.event.pull_request.changed_files), '.go') ||
-       contains(toJson(github.event.pull_request.changed_files), 'go.mod') ||
-       contains(toJson(github.event.pull_request.changed_files), 'go.sum'))
     steps:
       - uses: actions/checkout@v4
 
