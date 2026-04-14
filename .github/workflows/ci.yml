@@ -2,34 +2,72 @@ name: CI Build and Test
 
 on:
   push:
-    branches: [ "main", "develop" ]
+    branches: [ "main", "develop", "claude/*" ]
   pull_request:
     branches: [ "main", "develop" ]
 
 jobs:
-  build:
+  # ── Go: type-check, build, test, benchmark ──────────────────────────────────
+  go:
+    name: Go
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.24'
+      - uses: actions/checkout@v4
 
-    - name: Download dependencies
-      run: go mod download
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
 
-    - name: Vet
-      run: go vet ./engine/ ./tests/ .
+      - name: Download dependencies
+        run: go mod download
 
-    - name: Build engine
-      run: go build ./engine/
+      - name: Vet
+        run: go vet ./engine/ ./tests/ .
 
-    - name: Test (package main)
-      run: go test . -v -timeout 120s
+      - name: Build engine
+        run: go build ./engine/
 
-    - name: Test (tests package)
-      run: go test ./tests/ -v -timeout 120s
+      - name: Test (package main)
+        run: go test . -v -timeout 120s
 
-    - name: Benchmarks (package main)
-      run: go test . -bench=. -benchtime=2s -run='^$' -timeout 120s
+      - name: Test (tests package)
+        run: go test ./tests/ -v -timeout 120s
+
+      - name: Benchmarks (package main)
+        run: go test . -bench=. -benchtime=2s -run='^$' -timeout 120s
+
+  # ── Node / TurboRepo: build + test all JS/TS workspaces ────────────────────
+  node:
+    name: Node / Turbo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Lint (turbo)
+        run: npx turbo run lint
+        env:
+          TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+          TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+
+      - name: Build (turbo)
+        run: npx turbo run build
+        env:
+          TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+          TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+
+      - name: Test (turbo)
+        run: npx turbo run test
+        env:
+          TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+          TURBO_TEAM: ${{ secrets.TURBO_TEAM }}

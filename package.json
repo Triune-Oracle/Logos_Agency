@@ -1,21 +1,26 @@
 {
-  "name": "ai_service",
-  "version": "1.0.0",
-  "description": "AI Conversation Analysis Microservice",
-  "main": "src/server.js",
+  "name": "logos-agency",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "start": "node src/server.js",
-    "test": "jest",
-    "dev": "vite",
-    "build": "vite build"
-  },
-  "dependencies": {
-    "axios": "^1.5.0",
-    "express": "^4.18.2",
-    "dotenv": "^16.1.4"
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "dev": "turbo run dev",
+    "go:build": "make build",
+    "go:test": "make test",
+    "go:bench": "make bench",
+    "go:ci": "make ci"
   },
   "devDependencies": {
-    "jest": "^29.7.0",
-    "vite": "^4.0.0"
+    "turbo": "^2.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
   }
 }
