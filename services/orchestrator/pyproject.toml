@@ -1,0 +1,29 @@
+[tool.poetry]
+name = "logos-orchestrator"
+version = "0.1.0"
+description = "Logos Agency async orchestration service"
+authors = []
+readme = "README.md"
+packages = [{ include = "." }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+aiohttp = { version = "^3.9", optional = true }
+aiofiles = { version = "^23.2", optional = true }
+requests = { version = "^2.31", optional = true }
+
+[tool.poetry.extras]
+full = ["aiohttp", "aiofiles", "requests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+log_cli = true
+log_cli_level = "INFO"
+
+[tool.coverage.run]
+source = ["."]
+omit = ["tests/*", "*_stub.py"]
+
+[tool.coverage.report]
+fail_under = 80
