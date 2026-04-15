@@ -107,3 +107,14 @@ logs/
 # Misc
 .cache/
 .temp/
+
+# TurboRepo local cache
+.turbo/
+
+# Python coverage data
+.coverage
+.coverage.*
+htmlcov/
+
+# Vite / frontend build output (committed only in CI artifacts)
+apps/web/dist/

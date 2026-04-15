@@ -1,5 +1,47 @@
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Zap, Brain, Target } from "lucide-react";
+import { useEffect, useState } from "react";
+
+type SystemStatus = "checking" | "online" | "degraded" | "offline";
+
+function useSystemStatus(): SystemStatus {
+  const [status, setStatus] = useState<SystemStatus>("checking");
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/health", { signal: AbortSignal.timeout(4000) })
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        const orchOk = data?.checks?.orchestrator === "ok";
+        setStatus(orchOk ? "online" : "degraded");
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("offline");
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  return status;
+}
+
+const STATUS_STYLES: Record<SystemStatus, { dot: string; label: string }> = {
+  checking: { dot: "bg-muted-foreground animate-pulse", label: "Checking…" },
+  online:   { dot: "bg-green-500",                      label: "Systems Online" },
+  degraded: { dot: "bg-yellow-500",                     label: "Partial" },
+  offline:  { dot: "bg-red-500",                        label: "Offline" },
+};
+
+function SystemStatusDot() {
+  const status = useSystemStatus();
+  const { dot, label } = STATUS_STYLES[status];
+  return (
+    <span className="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground">
+      <span className={`w-2 h-2 rounded-full inline-block ${dot}`} />
+      {label}
+    </span>
+  );
+}
 
 export default function Home() {
   return (
@@ -16,7 +58,10 @@ export default function Home() {
             <a href="#strategy" className="text-sm hover:text-accent transition-colors">Strategy</a>
             <a href="#clientele" className="text-sm hover:text-accent transition-colors">Clientele</a>
           </div>
-          <Button variant="default" size="sm">Contact</Button>
+          <div className="flex items-center gap-4">
+            <SystemStatusDot />
+            <Button variant="default" size="sm">Contact</Button>
+          </div>
         </div>
       </nav>
 
