@@ -26,6 +26,94 @@ The Statistical Type Inference Engine provides advanced, Bayesian-based type det
 - **Deterministic Behavior**: Configurable random seed for reproducible results
 - **Performance Optimized**: Targets < 1ms for 1K rows, < 10ms for 10K rows
 
+## Probabilistic Model
+
+### Graphical Model (DAG)
+
+The engine models column type inference as a **Naïve Bayes classifier** over a
+five-node discrete categorical variable `Type ∈ {Integer, Float, String, Date, Boolean}`.
+
+```
+         ┌─────────────┐
+         │   Locale    │  (observed, configurable)
+         └──────┬──────┘
+                │  determines
+                ▼
+         ┌─────────────┐
+         │  P(Type)    │  prior node — one per supported locale
+         └──────┬──────┘
+                │
+                ▼
+         ┌─────────────┐
+         │    Type     │  latent variable — the column's true data type
+         └──────┬──────┘
+                │  generates
+       ┌────────┴──────────┐
+       ▼                   ▼
+  ┌─────────┐         ┌─────────┐
+  │  v₁     │  · · ·  │  vₙ     │  observed string values (plate of n values)
+  └─────────┘         └─────────┘
+```
+
+**Nodes and roles:**
+
+| Node | Kind | Description |
+|------|------|-------------|
+| `Locale` | Observed (input) | Configures which prior distribution is used. |
+| `P(Type)` | Deterministic function of Locale | Categorical prior over the five data types. |
+| `Type` | Latent (inferred) | The single true type for the column. |
+| `vᵢ` | Observed (input) | Individual string values in the column (plate). |
+
+### Naïve Bayes Assumption
+
+The engine adopts the **conditional independence** (naïve Bayes) assumption:
+given the column type, each value `vᵢ` is assumed to be drawn independently
+from the type-specific parse distribution. This gives the joint likelihood:
+
+```
+P(v₁, …, vₙ | Type) = ∏ᵢ P(vᵢ | Type)
+```
+
+Where the per-value likelihood `P(vᵢ | Type)` is estimated empirically as the
+fraction of values that successfully parse as `Type`:
+
+```
+P(Data | Type) = (# values that parse as Type) / (# non-empty values)
+```
+
+This approximation is deliberately simple: real type-parse distributions are
+almost always dominated by a single type (>80% of values parseable), which
+makes the naïve Bayes product well-conditioned and avoids the underflow
+problems that arise with log-space products over thousands of values.
+
+### Full Posterior
+
+Applying Bayes' theorem and normalizing:
+
+```
+P(Type | Data, Locale) = P(Data | Type) × P(Type | Locale)
+                         ──────────────────────────────────
+                              Σₜ P(Data | t) × P(t | Locale)
+```
+
+The denominator is the marginal likelihood (evidence). It is computed by
+summing the unnormalized numerator over all five type hypotheses, then dividing
+each numerator term to obtain a valid probability simplex.
+
+### Type-Selection Rules
+
+After computing the posterior, the engine applies two domain-specific tie-breaking
+rules before returning the final type:
+
+1. **Integer preference over Float**: If the top-ranked type is `Float` but
+   `Integer` scores within 90% of the Float probability, `Integer` is returned
+   (integers are a strict subset of floats and the more specific type is preferred).
+2. **String fallback**: If the top-ranked posterior probability is below both the
+   configured `ConfidenceThresh` and 0.50, and `String` has a posterior > 0.30,
+   the engine falls back to `String` (the safe default type).
+
+---
+
 ## Algorithm
 
 ### Bayesian Type Inference
@@ -63,6 +151,115 @@ Prior probabilities are locale-specific:
 | Global | 0.25    | 0.20  | 0.40   | 0.10 | 0.05    |
 
 These priors reflect typical data distributions in different regions.
+
+### Locale-Aware Prior Management
+
+#### Rationale for Regional Priors
+
+Different locales produce characteristically different data distributions. The
+locale-aware prior system encodes these differences as the categorical prior
+`P(Type | Locale)`, allowing the posterior to be calibrated to the context in
+which data was collected.
+
+**US (`en_US`)**
+- Date values are commonly written `MM/DD/YYYY`; the engine's `isDate` parser
+  recognises this format alongside ISO 8601.
+- Numeric columns (IDs, counts, prices) are frequent, so `Integer` (0.25) and
+  `Float` (0.20) are given moderate prior weight.
+- Boolean columns (flags, yes/no survey responses) are rare enough to remain at
+  the low-end prior (0.05).
+
+**EU (`en_EU`)**
+- Date values are commonly written `DD-MM-YYYY`; same parser support as US.
+- Numeric and string distributions are similar to US; the priors mirror the US
+  locale exactly in the current implementation. Future work may distinguish
+  EU locales further (e.g. comma-as-decimal-separator in `Float` detection).
+
+**Asia (`en_ASIA`)**
+- Asian datasets (particularly East Asian sources) tend to have a higher
+  proportion of purely numeric columns (IDs, product codes, phone numbers) and
+  a lower proportion of decimal/float columns compared to Western locales.
+- This is captured by raising `Integer` (0.30) and lowering `Float` (0.15).
+- Date formats (ISO 8601 and `YYYY年MM月DD日`) are common; the date prior
+  remains 0.10 but the format list will be extended in a future locale pass.
+
+**Global (`global`, default)**
+- Conservative generic priors with no region-specific bias. Used when the
+  data origin is unknown or mixed. Mirrors the US prior in the current
+  implementation.
+
+#### Updating Priors at Runtime
+
+Priors are stored in the exported `LocalePriors` map and can be overridden for
+domain-specific deployments without recompiling:
+
+```go
+// Override the Asia prior for a financial dataset with many floats
+engine.LocalePriors[engine.LocaleASIA] = engine.TypePrior{
+    Integer: 0.20,
+    Float:   0.30,
+    String:  0.35,
+    Date:    0.10,
+    Boolean: 0.05,
+}
+```
+
+The sum of prior values for each locale **must equal 1.0**. The engine does not
+validate this invariant at runtime; callers are responsible for maintaining it.
+
+#### Domain-Specific Prior Guidance
+
+| Domain | Recommended Locale | Notes |
+|--------|--------------------|-------|
+| Financial time-series | US or EU | High float/date ratio; increase Float/Date priors |
+| Survey / CRM data | Appropriate regional locale | High boolean/string ratio; increase Boolean prior |
+| Log files | Global | Mostly string; increase String prior to 0.60+ |
+| Sensor / IoT streams | Global | Near-pure float; increase Float prior to 0.50+ |
+| E-commerce product IDs | Asia or US | Near-pure integer; increase Integer prior to 0.50+ |
+
+---
+
+## Determinism Guarantees
+
+### Sources of Randomness
+
+The engine has **one and only one** source of randomness: the `math/rand.Rand`
+instance stored in `BayesianInferenceEngine.rng`. It is seeded from
+`InferenceConfig.RandomSeed` at construction time and is only used by the
+`sampleValues` method to produce a reservoir permutation when the input slice
+is larger than `SampleSize`.
+
+No other randomness sources are used:
+- Type-parse functions (`strconv.ParseInt`, `strconv.ParseFloat`, `time.Parse`)
+  are fully deterministic.
+- Likelihood aggregation, posterior normalization, and type selection are pure
+  arithmetic — no random draws.
+- SIMD vs. scalar dispatch is determined at package init by `runtime.GOARCH` and
+  never changes at runtime.
+
+### Determinism Contract
+
+| Condition | Guarantee |
+|-----------|-----------|
+| Same input slice + same seed + same locale | Identical `InferenceResult` every time, on any run of the same binary. |
+| Same input slice + same seed + same locale, two different platforms (amd64 vs arm64) | Same `InferredType` and `Confidence`. SIMD stat sub-results may differ by a few ULPs due to floating-point non-associativity; the final discrete type selection is unaffected. |
+| Input slice length ≤ `SampleSize` | Sampling is bypassed entirely; the RNG is never called. Result is deterministic regardless of seed. |
+| `SetSeed(s)` called on a live engine | Resets the RNG to seed `s`. Subsequent calls to `InferType` replay the same permutation sequence as a freshly-constructed engine with seed `s`. |
+| Concurrent calls to `InferType` | Serialized by an internal `sync.RWMutex`. Order of acquisition is not guaranteed; results from concurrent calls may differ if sampling is involved and the shared RNG state advances between calls. Use one engine per goroutine (or use separate seeds) for concurrent determinism. |
+
+### Allowed Variability
+
+- **ULP-level floating-point differences** between SIMD and scalar `CalculateStatsSIMD` / `CalculateStatsScalar` calls for the same input. These are expected, documented, and verified by `TestSIMDScalarEquivalence_Stats`. The maximum observed divergence is < 10 ULPs; it never affects the final type selection.
+- **Non-deterministic execution order** across goroutines when a shared engine is used concurrently (see table above). Use per-goroutine engine instances or an external mutex if fully deterministic concurrent behavior is required.
+
+### Production Constraints
+
+1. **Always set an explicit `RandomSeed`** in production `InferenceConfig`. Do not rely on the default value `42` (set in `DefaultConfig()` in `engine/stat_inference.go`) if reproducibility across deployments matters — make the seed an explicit deployment parameter.
+2. **Do not use `time.Now().UnixNano()` as a seed** unless non-determinism is intentionally desired (e.g., exploratory sampling with varied results).
+3. **Do not replace `math/rand` with `crypto/rand`**: The engine does not require cryptographically secure randomness, and `crypto/rand` is non-deterministic by design.
+4. **Rebuild the engine with the same Go version** for bit-identical results. Go's `math/rand` v1 implementation is stable across patch versions; upgrading major versions of Go may alter the output permutation for a given seed.
+
+---
 
 ## Usage
 
@@ -176,14 +373,34 @@ The SIMD fastpath uses vectorization-friendly patterns:
    floating-point non-associativity; this is expected, documented, and verified
    by `TestSIMDScalarEquivalence_Stats`.
 
-### Measured Performance (AMD EPYC 9V74, amd64, Go 1.24)
+## Performance Characteristics
+
+### Performance Targets
+
+The table below shows the **required** end-to-end `InferType` latency targets.
+Both single-threaded (SIMD disabled) and SIMD-accelerated targets must be met
+to consider an implementation releasable.
+
+| Dataset Size | Single-Threaded Target | SIMD-Accelerated Target | Required Speedup |
+|--------------|------------------------|-------------------------|------------------|
+| 100 rows     | < 0.5 ms               | < 0.5 ms                | ≥ 1.0×           |
+| 1 K rows     | < 2 ms                 | < 0.2 ms                | ≥ 5×             |
+| 10 K rows    | < 15 ms                | < 1 ms                  | ≥ 5×             |
+| 100 K rows   | < 150 ms               | < 20 ms                 | ≥ 5×             |
+
+> **Note on small datasets**: For inputs with ≤ 100 values the engine skips the
+> SIMD likelihood path (dispatch threshold is 100 elements). The overhead of
+> initializing the vectorized code path exceeds the savings at this scale, so
+> the single-threaded and SIMD targets are identical.
+
+#### Measured Performance (AMD EPYC 9V74, amd64, Go 1.24)
 
 End-to-end `InferType` benchmarks (SIMD enabled vs disabled):
 
-| Dataset Size | SIMD Enabled | SIMD Disabled | Speedup |
-|--------------|-------------|---------------|---------|
-| 1K rows      | ~30 µs      | ~750 µs       | **25x** |
-| 10K rows     | ~120 µs     | ~910 µs       | **7.5x** |
+| Dataset Size | SIMD Enabled | Single-Threaded | Speedup |
+|--------------|--------------|-----------------|---------|
+| 1K rows      | ~30 µs       | ~750 µs         | **25×** |
+| 10K rows     | ~120 µs      | ~910 µs         | **7.5×**|
 
 Raw `CalculateStatsSIMD` / `CalculateStatsScalar` kernel (zero allocations):
 
@@ -192,22 +409,11 @@ Raw `CalculateStatsSIMD` / `CalculateStatsScalar` kernel (zero allocations):
 | 1K elements  | ~1.7 µs     | ~1.1 µs       |
 | 10K elements | ~17 µs      | ~11 µs        |
 
-> **Note**: The bulk of the end-to-end speedup comes from the likelihood-calculation
-> batch path (`CalculateLikelihoodsSIMD`), which avoids per-value allocations and
-> processes values in independent bool arrays that the compiler can vectorize.
-> The stats kernel times are similar because both paths are compute-bound and the
-> CPU's out-of-order engine already pipelines the scalar loop well.
-
-## Performance Characteristics
-
-### Performance Targets
-
-| Dataset Size | Target Time | SIMD Speedup |
-|--------------|-------------|--------------|
-| 100 rows     | < 0.1ms     | 1.0x         |
-| 1K rows      | < 1ms       | 1.2x         |
-| 10K rows     | < 10ms      | 1.5x         |
-| 100K rows    | < 100ms     | 2.0x         |
+> The bulk of the end-to-end speedup comes from the likelihood-calculation
+> batch path (`CalculateLikelihoodsSIMD`), which avoids per-value allocations
+> and processes values in independent bool arrays that the compiler can
+> auto-vectorize. The stats kernel times are similar because both paths are
+> compute-bound and the CPU's out-of-order engine pipelines the scalar loop well.
 
 ### Memory Usage
 
@@ -532,11 +738,141 @@ Potential areas for future development:
    - ARM NEON optimizations
    - Custom assembly for hot paths
 
+## Code Layout
+
+### Expected File Structure
+
+```
+engine/
+├── stat_inference.go          # Core Bayesian engine and public API
+├── simd_fastpath.go           # SIMD-accelerated likelihood + stats kernels
+├── stat_inference_complete.go # Supplementary Bayesian helpers (posterior, prior utilities)
+└── effect_size.go             # Statistical effect-size helpers used by tests
+
+tests/
+├── stat_inference_test.go       # Unit tests for BayesianInferenceEngine
+├── stat_inference_bench_test.go # Benchmark suite (1K / 10K rows, SIMD on/off)
+└── simd_fastpath_test.go        # SIMD correctness and equivalence tests
+```
+
+### `engine/stat_inference.go` — Core Engine
+
+| Symbol | Kind | Purpose |
+|--------|------|---------|
+| `DataType` | `type` (int) | Enumerated type constants (`TypeUnknown`…`TypeBoolean`) |
+| `Locale` | `type` (string) | Region identifier (`LocaleUS`, `LocaleEU`, `LocaleASIA`, `LocaleGlobal`) |
+| `TypePrior` | `struct` | Per-locale Bayesian prior probabilities for each `DataType` |
+| `LocalePriors` | `var` (map) | Exported map of locale → prior; can be overridden at runtime |
+| `InferenceConfig` | `struct` | Engine configuration: locale, sample size, confidence threshold, seed, SIMD flag |
+| `DefaultConfig()` | `func` | Returns a ready-to-use default configuration |
+| `TypeProbability` | `struct` | Posterior probability and evidence for a single type |
+| `InferenceResult` | `struct` | Full inference output: inferred type, confidence, per-type posteriors, sample size |
+| `BayesianInferenceEngine` | `struct` | Main engine; holds config, seeded RNG, and a read-write mutex |
+| `NewBayesianInferenceEngine()` | `func` | Constructor — seeds the RNG from `config.RandomSeed` |
+| `InferType()` | `method` | Main entry point: sample → likelihoods → posteriors → type selection |
+| `InferTypeSimple()` | `method` | Convenience wrapper returning a `string` type name |
+| `SetLocale()` | `method` | Atomically updates the locale used for priors |
+| `SetSeed()` | `method` | Atomically resets the RNG to a new seed |
+| `GetConfidence()` | `method` | Shorthand: returns only the confidence of the inferred type |
+| `CalculateEntropy()` | `func` | Shannon entropy of a `[]TypeProbability` slice |
+| `sampleValues()` | `method` (private) | Reservoir-sample down to `config.SampleSize` using the seeded RNG |
+| `calculateLikelihoods()` | `method` (private) | Dispatches to SIMD or scalar likelihood calculation |
+| `calculatePosteriors()` | `method` (private) | Applies Bayes' theorem; normalizes into a probability simplex |
+| `selectType()` | `method` (private) | Chooses the final type with integer-preference and string-fallback rules |
+| `isDate()` | `method` (private) | Tries parsing a string against eight date layouts |
+
+### `engine/simd_fastpath.go` — SIMD Acceleration Layer
+
+| Symbol | Kind | Purpose |
+|--------|------|---------|
+| `SIMDCapabilities` | `struct` | Platform info: arch, vector width, unroll factor, availability flag |
+| `DetectSIMDCapabilities()` | `func` | Inspects `runtime.GOARCH` and returns the appropriate `SIMDCapabilities` |
+| `IsSIMDAvailable()` | `func` | Reports whether a SIMD-accelerated path exists for the current platform |
+| `GetSIMDCapabilities()` | `func` | Returns the capabilities detected at `init()` time |
+| `CalculateLikelihoodsSIMD()` | `func` | Batch likelihood calculation over a `[]string` slice; dispatches to per-arch kernel |
+| `CalculateStatsSIMD()` | `func` | Vectorized mean + variance for `[]float64`; dispatches to per-arch kernel |
+| `CalculateStatsScalar()` | `func` | Reference scalar mean + variance (exported for testing and fallback) |
+| `countSuccessesSIMD()` | `func` (private) | Dispatches to `countSuccessesAMD64` or `countSuccessesARM64` |
+| `countSuccessesAMD64()` | `func` (private) | 8-wide unrolled counting loop targeting AVX2 dual-issue pipelines |
+| `countSuccessesARM64()` | `func` (private) | 4-wide unrolled counting loop targeting NEON |
+| `calculateStatsAMD64()` | `func` (private) | 8-accumulator sum/sum-of-squares with balanced tree reduction (AVX2) |
+| `calculateStatsARM64()` | `func` (private) | 4-accumulator variant for NEON |
+| `ParallelLikelihoodBatch()` | `func` | Processes multiple columns concurrently; each column runs in its own goroutine |
+
+### `engine/stat_inference_complete.go` — Supplementary Bayesian Utilities
+
+| Symbol | Kind | Purpose |
+|--------|------|---------|
+| `Prior` | `struct` | Generic prior descriptor: distribution type (`"normal"`, `"uniform"`) and parameters |
+| `calculateLikelihood()` | `func` (private) | Gaussian likelihood of a `[]float64` dataset given mean and variance |
+| `computePosterior()` | `func` (private) | Computes posterior mean and variance from data and a `Prior` |
+| `getLocaleAwarePrior()` | `func` (private) | Maps a locale string to a `Prior`; used for continuous numeric inference |
+| `BayesianInference()` | `func` | End-to-end: fetch locale prior → compute posterior → return mean and variance |
+
+---
+
+## Acceptance Criteria
+
+The following criteria must be satisfied before the statistical inference engine
+implementation is considered complete and ready for production review.
+
+### Model Correctness
+
+- [ ] `InferType([]string{"1","2","3"})` returns `TypeInteger` with confidence ≥ 0.85.
+- [ ] `InferType([]string{"1.1","2.2","3.3"})` returns `TypeFloat` with confidence ≥ 0.85.
+- [ ] `InferType([]string{"true","false","yes","no"})` returns `TypeBoolean` with confidence ≥ 0.85.
+- [ ] `InferType([]string{"2024-01-01","2024-06-15"})` returns `TypeDate` with confidence ≥ 0.80.
+- [ ] `InferType([]string{"hello","world","foo"})` returns `TypeString` with confidence ≥ 0.80.
+- [ ] Mixed columns (>20% non-parseable values for the dominant type) return `TypeString` or a confidence < 0.80.
+- [ ] `CalculateEntropy` returns 0.0 for a deterministic single-type result and > 2.0 for a maximally-uniform distribution.
+
+### Locale Awareness
+
+- [ ] `SetLocale(LocaleASIA)` followed by `InferType` on an all-integer column increases the `TypeInteger` posterior relative to `LocaleUS` by at least the ratio of the respective priors (0.30 / 0.25 = 1.20×).
+- [ ] Overriding `LocalePriors[LocaleUS]` at runtime immediately affects subsequent inference calls without requiring engine reconstruction.
+- [ ] All four locale priors sum to exactly 1.0 (verified by a unit test).
+
+### Determinism
+
+- [ ] Two engines constructed with the same seed and locale produce bit-identical `InferenceResult` for the same input, including when sampling is triggered (input length > `SampleSize`).
+- [ ] `SetSeed(s)` on a live engine produces the same result sequence as constructing a new engine with seed `s`.
+- [ ] Input slices shorter than or equal to `SampleSize` produce identical results regardless of the seed value.
+- [ ] Concurrent calls on the same engine (serialized by the mutex) do not panic, deadlock, or produce data races under `go test -race`.
+
+### Performance
+
+- [ ] `BenchmarkBayesianInference_1000` (SIMD enabled) completes in < 200 µs on the CI runner.
+- [ ] `BenchmarkBayesianInference_10000` (SIMD enabled) completes in < 1 ms on the CI runner.
+- [ ] `BenchmarkBayesianInference_1000` (SIMD disabled) completes in < 2 ms on the CI runner.
+- [ ] `BenchmarkBayesianInference_10000` (SIMD disabled) completes in < 15 ms on the CI runner.
+- [ ] `CalculateStatsSIMD` and `CalculateStatsScalar` produce mean and variance values that agree to within 10 ULPs for the same input (verified by `TestSIMDScalarEquivalence_Stats`).
+
+### Code Layout
+
+- [ ] `engine/stat_inference.go` contains all public types and the `BayesianInferenceEngine` implementation as documented in this file's Code Layout section.
+- [ ] `engine/simd_fastpath.go` contains all SIMD dispatch and kernel logic as documented.
+- [ ] `engine/stat_inference_complete.go` contains the continuous-distribution Bayesian utilities as documented.
+- [ ] Each file contains only the symbols listed for it in the Code Layout section; cross-file symbol duplication is avoided.
+- [ ] All exported symbols have Go doc comments.
+
+### Test Coverage
+
+- [ ] `go test ./tests/... -coverprofile=coverage.out` produces ≥ 80% statement coverage for `engine/stat_inference.go`.
+- [ ] `go test ./tests/... -coverprofile=coverage.out` produces ≥ 70% statement coverage for `engine/simd_fastpath.go`.
+- [ ] All benchmark functions compile and run without errors under `go test ./tests/ -bench=. -benchtime=2s -run='^$'`.
+
+---
+
 ## References
 
 - Bayesian Inference: https://en.wikipedia.org/wiki/Bayesian_inference
+- Naïve Bayes classifier: https://en.wikipedia.org/wiki/Naive_Bayes_classifier
+- Graphical models (DAG / plate notation): https://en.wikipedia.org/wiki/Graphical_model
 - SIMD Programming: https://en.wikipedia.org/wiki/SIMD
+- AVX2 intrinsics reference: https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html
+- ARM NEON intrinsics reference: https://developer.arm.com/architectures/instruction-sets/intrinsics/
 - Go Performance: https://go.dev/doc/effective_go#optimization
+- Shannon entropy: https://en.wikipedia.org/wiki/Entropy_(information_theory)
 
 ## License
 
